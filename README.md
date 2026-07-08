@@ -54,6 +54,16 @@ git checkout -b main origin/main
 
 以上流程只执行一次。
 
+拉取后可以重新执行以下命令
+```bash
+cd frontend
+npm install
+
+cd backend
+.venv\Scripts\activate
+pip install -r requirements.txt
+```
+
 ### 1. 分支管理
 
 项目主分支：
