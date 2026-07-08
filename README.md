@@ -1,2 +1,209 @@
 # MelonPestDetection-AgentPlatform
-An Intelligent Melon Pest Detection and Agricultural Decision Support Platform Based on YOLO11 and Multi-Agent Collaboration
+
+基于 YOLO11 与多智能体协同的哈密瓜病虫害智能检测及农业决策支持平台
+
+## 开发协作规范
+
+为了保证项目代码质量和多人协作效率，本项目采用 GitHub Pull Request 工作流程。
+
+---
+
+### 1. 分支管理
+
+项目主分支：
+
+- `main`：稳定版本分支，仅用于发布和保存经过审核的代码。
+- `feature/*`：功能开发分支，每个成员开发新功能时需要创建独立分支。
+
+**禁止直接向 `main` 分支提交代码。**
+
+分支命名建议：`feature-功能名称`
+
+例如：
+```
+feature-login      # 登录功能
+feature-model      # 模型功能
+feature-ui         # 界面功能
+```
+---
+
+### 2. 开发流程
+
+#### （1）拉取最新代码
+开始新功能开发前，请先同步主分支：
+
+1. 切换到主分支
+```bash
+git checkout main  
+```
+
+2. 拉取远程仓库 main 分支的所有新增提交
+```bash
+git pull origin main
+```
+
+#### （2）创建个人开发分支
+
+基于最新的 `main` 创建自己的功能分支：
+
+```bash
+git checkout -b feature-xxx
+```
+
+例如：
+
+```bash
+git checkout -b feature-login
+```
+#### （3）进行代码开发
+
+完成代码修改后：
+
+```bash
+git add .
+git commit -m "完成xxx功能"
+```
+提交信息建议简洁明确，例如：
+
+```
+完成用户登录功能
+修复模型预测错误
+优化数据处理流程
+```
+
+注意：
+
+- `commit` 只会保存到本地仓库，不会上传到 GitHub；
+- 已经`commit`的修改不会因为切换到`main`分支并执行`git pull`而被覆盖；
+- 开发过程中建议及时进行`commit`，保存阶段性成果，避免长时间积累未提交修改。
+
+例如：
+```bash
+git commit -m "完成登录接口开发"
+```
+之后可以安全执行：
+
+```bash
+git checkout main
+git pull origin main
+```
+
+再切回自己的开发分支：
+
+```bash
+git checkout feature-login
+```
+
+之前提交的代码仍然保留。
+
+#### （4）推送个人分支
+
+将自己的分支推送到 GitHub：
+
+```bash
+git push origin feature-xxx
+```
+
+例如：
+
+```bash
+git push origin feature-login
+```
+
+注意不要执行：
+
+```bash
+git push origin main
+```
+直接推送主分支会被仓库规则拒绝。
+
+---
+
+### 3. 提交 Pull Request
+
+代码推送成功后：
+
+1. 进入 GitHub 仓库页面；
+2. 点击 `Pull requests`；
+3. 点击 `New pull request`；
+4. 选择：
+
+```
+base:
+main
+
+compare:
+feature-xxx
+```
+
+5. 填写 Pull Request 标题和说明；
+6. 点击 `Create pull request`。
+
+示例：
+
+标题：
+```
+完成用户登录模块
+```
+
+描述：
+
+```
+本次修改内容：
+- 添加登录接口
+- 增加用户验证逻辑
+- 修复异常输入问题
+```
+
+---
+
+### 4. 代码审核与合并
+
+Pull Request 创建后，由负责人进行代码审核。
+
+负责人会：
+
+* 检查代码实现；
+* 检查代码规范；
+* 测试功能是否正常；
+* 提出修改意见。
+
+1. 审核通过后负责人点击：`Approve`,然后：`Merge pull request`,代码合并进入 `main`。
+2. 需要修改时负责人选择：`Request changes`,开发成员根据意见修改代码：
+
+```bash
+git add .
+git commit -m "根据review修改"
+git push origin feature-xxx
+```
+
+原 Pull Request 会自动更新，无需重新创建。
+
+---
+
+### 5. 合并完成后的清理
+
+功能合并完成后，可以删除已经完成的开发分支：
+
+1. 先删本地分支
+```bash
+git branch -d feature-xxx
+```
+
+2.再删除远程线上分支：
+
+```bash
+git push origin --delete feature-xxx
+```
+
+---
+
+### 6. 注意事项
+
+* 禁止直接修改 `main` 分支；
+* 每个功能尽量对应一个独立分支；
+* 提交代码前确保项目可以正常运行；
+* Commit 信息应清晰描述修改内容；
+* 提交 Pull Request 前自行测试代码；
+* 不要提交无关文件（例如编译生成文件、临时文件等）。
+
