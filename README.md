@@ -69,29 +69,18 @@ pip install -r requirements.txt
 项目主分支：
 
 - `main`：稳定版本分支，仅用于发布和保存经过审核的代码。
-- **`分工+名字`：个人开发分支，个人实现的所有功能都在这个分支(建议)**。
-- `feature/*`：功能开发分支，一个功能一个分支。
-
+- `分工+名字`：个人开发分支，个人所有的提交都在这个分支。
 
 **禁止直接向 `main` 分支提交代码。**
 
-分支命名建议
-1. 以`分工+名字`命名，以后所有的提交都在这个分支，不用频繁新建和删除分支。
+分支命名建议：以`分工+名字`命名。
 
 例如：
 ```
-backend-yourusername   
+backend-yourusername   # 后端
+frontend-yourusername  # 前端
+deploy-youusername     # 部署
 ```
-
-2. `feature-功能名称`  
-
-例如：
-```
-feature-login      # 登录功能
-feature-model      # 模型功能
-feature-ui         # 界面功能
-```
-
 
 ---
 
@@ -113,12 +102,14 @@ git pull origin main
 
 #### （2）创建个人开发分支
 
-创建并切换到自己的功能分支：
+创建并切换到自己的个人分支：
 
 ```bash
-git checkout -b feature-xxx
+git checkout -b 分工+名字
 ```
-或切换到已有的分支:
+这里只创建一次，后续直接切换(两次命令不同)：
+
+例如：
 ```bash
 git checkout backend-yourusername  
 ```
@@ -148,39 +139,21 @@ git commit -m "完成xxx功能"
 
 - `commit` 只会保存到本地仓库，不会上传到 GitHub；
 - 已经`commit`的修改不会因为切换到`main`分支并执行`git pull`而被覆盖；
-- 开发过程中建议及时进行`commit`，保存阶段性成果，避免长时间积累未提交修改。
+- **开发过程中建议及时进行`commit`**，保存阶段性成果，避免长时间积累未提交修改。
 
-例如：
-```bash
-git commit -m "完成登录接口开发"
-```
-之后可以安全执行：
-
-```bash
-git checkout main
-git pull origin main
-```
-
-再切回自己的开发分支：
-
-```bash
-git checkout feature-login
-```
-
-之前提交的代码仍然保留。
 
 #### （4）推送个人分支
 
 将自己的分支推送到 GitHub：
 
 ```bash
-git push origin feature-xxx
+git push origin 分工+名字
 ```
 
 例如：
 
 ```bash
-git push origin feature-login
+git push origin backend-yourusername 
 ```
 
 注意不要执行：
@@ -203,7 +176,8 @@ git push origin main
 4. 选择：
 
 base:`main`
-compare:`feature-xxx`
+
+compare:`backend-yourusername `
 
 5. 填写 Pull Request 标题和说明；
 6. 点击 `Create pull request`。
@@ -240,33 +214,14 @@ Pull Request 创建后，由负责人进行代码审核。
 ```bash
 git add .
 git commit -m "根据review修改"
-git push origin feature-xxx
+git push origin backend-yourusername 
 ```
 
 原 Pull Request 会自动更新，无需重新创建。
 
 ---
 
-### 5. 合并完成后的清理
-
-功能合并完成后，可以删除已经完成的功能分支：
-
-1. 先删本地分支
-```bash
-git branch -d feature-xxx
-```
-
-2.再删除远程线上分支：
-
-```bash
-git push origin --delete feature-xxx
-```
-
-如果自己的分支是`分工+名字`，则可以不用删除，以后都用这个分支。
-
----
-
-### 6. 注意事项
+### 5. 注意事项
 
 - 禁止直接修改 `main` 分支；
 - **提交代码前确保项目可以正常运行，完成功能测试**；
