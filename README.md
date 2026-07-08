@@ -246,3 +246,5 @@ git push origin --delete feature-xxx
 * 提交 Pull Request 前自行测试代码，保证功能正确无完成；
 * 不要提交无关文件（例如编译生成文件、临时文件等）。
 
+frontend-lucy：尝试 github request
+
