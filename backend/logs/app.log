@@ -11555,3 +11555,32 @@ WHERE %(param_1)s = user_roles.user_id
 2026-07-06 16:57:05 | INFO     | watchfiles.main:_log_changes:309 | 1 change detected
 2026-07-06 16:57:05 | INFO     | watchfiles.main:_log_changes:309 | 1 change detected
 2026-07-06 16:57:05 | INFO     | watchfiles.main:_log_changes:309 | 1 change detected
+2026-07-08 10:41:44 | INFO     | request:dispatch:64 | → POST /api/auth/login | ip=127.0.0.1 | size=47
+2026-07-08 10:41:44 | INFO     | sqlalchemy.engine.Engine:_exec_single_context:1896 | select pg_catalog.version()
+2026-07-08 10:41:44 | INFO     | sqlalchemy.engine.Engine:_exec_single_context:1901 | [raw sql] {}
+2026-07-08 10:41:44 | INFO     | sqlalchemy.engine.Engine:_exec_single_context:1896 | select current_schema()
+2026-07-08 10:41:44 | INFO     | sqlalchemy.engine.Engine:_exec_single_context:1901 | [raw sql] {}
+2026-07-08 10:41:44 | INFO     | sqlalchemy.engine.Engine:_exec_single_context:1896 | show standard_conforming_strings
+2026-07-08 10:41:44 | INFO     | sqlalchemy.engine.Engine:_exec_single_context:1901 | [raw sql] {}
+2026-07-08 10:41:44 | INFO     | sqlalchemy.engine.Engine:_begin_impl:1088 | BEGIN (implicit)
+2026-07-08 10:41:44 | INFO     | sqlalchemy.engine.Engine:_exec_single_context:1896 | SELECT users.id AS users_id, users.username AS users_username, users.email AS users_email, users.hashed_password AS users_hashed_password, users.phone AS users_phone, users.avatar AS users_avatar, users.is_active AS users_is_active, users.is_superuser AS users_is_superuser, users.last_login_at AS users_last_login_at, users.created_at AS users_created_at, users.updated_at AS users_updated_at 
+FROM users 
+WHERE users.username = %(username_1)s 
+ LIMIT %(param_1)s
+2026-07-08 10:41:44 | INFO     | sqlalchemy.engine.Engine:_exec_single_context:1901 | [generated in 0.00101s] {'username_1': 'beisheng', 'param_1': 1}
+2026-07-08 10:41:44 | INFO     | watchfiles.main:_log_changes:309 | 1 change detected
+2026-07-08 10:41:45 | INFO     | sqlalchemy.engine.Engine:_exec_single_context:1896 | SELECT user_roles.id AS user_roles_id, user_roles.user_id AS user_roles_user_id, user_roles.role_id AS user_roles_role_id, user_roles.created_at AS user_roles_created_at 
+FROM user_roles 
+WHERE %(param_1)s = user_roles.user_id
+2026-07-08 10:41:45 | INFO     | sqlalchemy.engine.Engine:_exec_single_context:1901 | [generated in 0.00101s] {'param_1': 3}
+2026-07-08 10:41:45 | INFO     | sqlalchemy.engine.Engine:_rollback_impl:1114 | ROLLBACK
+2026-07-08 10:41:45 | INFO     | request:dispatch:98 | ← POST /api/auth/login | status=200 | 389.5ms
+2026-07-08 10:41:45 | INFO     | watchfiles.main:_log_changes:309 | 1 change detected
+2026-07-08 10:41:45 | INFO     | watchfiles.main:_log_changes:309 | 1 change detected
+2026-07-08 10:41:45 | INFO     | watchfiles.main:_log_changes:309 | 1 change detected
+2026-07-08 10:41:46 | INFO     | watchfiles.main:_log_changes:309 | 1 change detected
+2026-07-08 10:41:46 | INFO     | watchfiles.main:_log_changes:309 | 1 change detected
+2026-07-08 10:41:46 | INFO     | watchfiles.main:_log_changes:309 | 1 change detected
+2026-07-08 10:41:47 | INFO     | watchfiles.main:_log_changes:309 | 1 change detected
+2026-07-08 10:41:47 | INFO     | watchfiles.main:_log_changes:309 | 1 change detected
+2026-07-08 10:41:48 | INFO     | watchfiles.main:_log_changes:309 | 1 change detected

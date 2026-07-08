@@ -8,6 +8,52 @@
 
 ---
 
+### 首次加入项目（只执行一次）
+1. 进入项目目录
+```bash
+cd 项目目录
+```
+2. 初始化 Git
+```bash
+git init
+```
+3. 连接仓库
+```bash
+git remote add origin https://github.com/beishengyixiao0-rgb/MelonPestDetection-AgentPlatform.git
+```
+
+4. 检查是否成功：
+```bash
+git remote -v
+```
+应该看到：
+```
+origin  https://github.com/beishengyixiao0-rgb/MelonPestDetection-AgentPlatform.git (fetch)
+origin  https://github.com/beishengyixiao0-rgb/MelonPestDetection-AgentPlatform.git (push)
+```
+5. 获取仓库最新代码
+```bash
+git fetch origin
+```
+6. 覆盖同名文件
+```bash
+git checkout origin/main -- .
+```
+
+结果：
+| 文件情况 | 处理结果 |
+| ---- | ---- |
+| 仓库里存在，本地也有 | 用仓库版本覆盖 |
+| 仓库里存在，本地没有 | 下载到本地 |
+| 仓库没有，本地有 | 保留 |
+
+7. 建立本地`main`分支并关联远程`main`
+```bash
+git checkout -b main origin/main
+```
+
+以上流程只执行一次。
+
 ### 1. 分支管理
 
 项目主分支：
@@ -26,6 +72,7 @@ feature-model      # 模型功能
 feature-ui         # 界面功能
 ```
 ---
+
 
 ### 2. 开发流程
 
@@ -128,23 +175,15 @@ git push origin main
 3. 点击 `New pull request`；
 4. 选择：
 
-```
-base:
-main
-
-compare:
-feature-xxx
-```
+base:`main`
+compare:`feature-xxx`
 
 5. 填写 Pull Request 标题和说明；
 6. 点击 `Create pull request`。
 
 示例：
 
-标题：
-```
-完成用户登录模块
-```
+标题：`完成用户登录模块`
 
 描述：
 
@@ -204,6 +243,6 @@ git push origin --delete feature-xxx
 * 每个功能尽量对应一个独立分支；
 * 提交代码前确保项目可以正常运行；
 * Commit 信息应清晰描述修改内容；
-* 提交 Pull Request 前自行测试代码；
+* 提交 Pull Request 前自行测试代码，保证功能正确无完成；
 * 不要提交无关文件（例如编译生成文件、临时文件等）。
 
