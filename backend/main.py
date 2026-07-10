@@ -64,6 +64,7 @@ app.add_middleware(RequestLogMiddleware)
 
 # 注册路由
 app.include_router(auth_router)
+
 app.include_router(health_router)
 
 
@@ -81,5 +82,3 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-
-# 测试修改：邬昊彤

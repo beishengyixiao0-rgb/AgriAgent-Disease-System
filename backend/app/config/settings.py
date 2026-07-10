@@ -10,6 +10,10 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """应用全局配置"""
 
+    # ── 训练配置 ──────────────────────────────────────
+    TRAIN_OUTPUT_DIR: str = "runs/train"  # 训练输出目录（模型权重、日志等）
+    DATASET_BASE_DIR: str = "datasets"  # 数据集根目录
+
     # — 应用基础配置 —
     APP_NAME: str = "RSOD Agent Platform"
     APP_VERSION: str = "0.1.0"
@@ -17,9 +21,9 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
 
     # ── 日志配置 ──────────────────────────────────────
-    LOG_DIR: str = "logs"                # 日志目录（相对于 backend/）
-    LOG_MAX_BYTES: int = 10 * 1024 * 1024   # 单文件最大 10MB
-    LOG_BACKUP_COUNT: int = 5            # 保留 5 份历史日志
+    LOG_DIR: str = "logs"  # 日志目录（相对于 backend/）
+    LOG_MAX_BYTES: int = 10 * 1024 * 1024  # 单文件最大 10MB
+    LOG_BACKUP_COUNT: int = 5  # 保留 5 份历史日志
 
     # — 数据库配置 —
     DB_HOST: str = "localhost"
