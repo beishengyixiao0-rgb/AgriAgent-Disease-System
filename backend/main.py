@@ -65,8 +65,10 @@ app.add_middleware(RequestLogMiddleware)
 
 # 注册路由
 app.include_router(auth_router)
-app.include_router(training_router)
+
 app.include_router(health_router)
+
+app.include_router(training_router)
 
 
 @app.get("/")
