@@ -18,9 +18,15 @@
 </template>
 
 <script setup>
+import {
+  ChatDotRound,
+  Clock,
+  Cpu,
+  DataAnalysis,
+  House
+} from '@element-plus/icons-vue'
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { Camera, ChatDotRound, Clock, Cpu, DataAnalysis } from '@element-plus/icons-vue'
 
 const route = useRoute()
 
@@ -31,11 +37,11 @@ const activeMenu = computed(() => {
 
 /** 侧边栏菜单配置 */
 const menuItems = [
-  { path: '/chat', title: '智能对话', icon: ChatDotRound },
-  { path: '/detection', title: '检测工作台', icon: Camera },
-  { path: '/training', title: '模型训练', icon: Cpu },
-  { path: '/history', title: '历史记录', icon: Clock },
-  { path: '/dashboard', title: '数据看板', icon: DataAnalysis },
+  { path: '/', title: 'Home', icon: House },
+  { path: '/ai-chat', title: 'AI Agent', icon: ChatDotRound },
+  { path: '/data-analysis', title: 'Analytics', icon: DataAnalysis },
+  { path: '/history', title: 'History', icon: Clock },
+  { path: '/training', title: 'Training', icon: Cpu },
 ]
 </script>
 

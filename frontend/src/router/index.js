@@ -20,45 +20,55 @@ const routes = [
     component: () => import('@/views/RegisterPage.vue'),
     meta: { title: '注册', requiresAuth: false },
   },
-
-  // ── 需要登录的页面（使用 MainLayout 布局） ──────
   {
     path: '/',
-    component: () => import('@/components/layout/MainLayout.vue'),
-    redirect: '/chat',
-    meta: { requiresAuth: true },
-    children: [
-      {
-        path: 'chat',
-        name: 'Chat',
-        component: () => import('@/views/ChatPage.vue'),
-        meta: { title: '智能对话', icon: 'ChatDotRound' },
-      },
-      {
-        path: 'detection',
-        name: 'Detection',
-        component: () => import('@/views/DetectionPage.vue'),
-        meta: { title: '检测工作台', icon: 'Camera' },
-      },
-      {
-        path: 'training',
-        name: 'Training',
-        component: () => import('@/views/TrainingPage.vue'),
-        meta: { title: '模型训练', icon: 'Cpu' },
-      },
-      {
-        path: 'history',
-        name: 'History',
-        component: () => import('@/views/HistoryPage.vue'),
-        meta: { title: '历史记录', icon: 'Clock' },
-      },
-      {
-        path: 'dashboard',
-        name: 'Dashboard',
-        component: () => import('@/views/DashboardPage.vue'),
-        meta: { title: '数据看板', icon: 'DataAnalysis' },
-      },
-    ],
+    name: 'Home',
+    component: () => import('@/views/HomePage.vue'),
+    meta: {
+      title: 'Home',
+      requiresAuth: true,
+    },
+  },
+
+  // ── AgriAgent 页面 ───────────────────────
+  {
+    path: '/ai-chat',
+    name: 'AIChat',
+    component: () => import('@/views/ChatPage.vue'),
+    meta: {
+      title: 'AI Agent',
+      requiresAuth: true,
+    },
+  },
+
+  {
+    path: '/data-analysis',
+    name: 'DataAnalysis',
+    component: () => import('@/views/AnalyticsPage.vue'),
+    meta: {
+      title: 'Analytics',
+      requiresAuth: true,
+    },
+  },
+
+  {
+    path: '/history',
+    name: 'History',
+    component: () => import('@/views/HistoryPage.vue'),
+    meta: {
+      title: 'History',
+      requiresAuth: true,
+    },
+  },
+
+  {
+    path: '/training',
+    name: 'Training',
+    component: () => import('@/views/TrainingPage.vue'),
+    meta: {
+      title: 'Training',
+      requiresAuth: true,
+    },
   },
 
   // ── 404 页面 ─────────────────────────────────────
@@ -78,18 +88,15 @@ const router = createRouter({
 router.beforeEach((to, from, next) => {
   // 设置页面标题
   document.title = to.meta.title
-    ? `${to.meta.title} - RSOD Agent Platform`
-    : 'RSOD Agent Platform'
+    ? `${to.meta.title} - AgriAgent`
+    : 'AgriAgent'
 
-  // 检查是否需要认证
   const token = localStorage.getItem('rsod_token')
   const requiresAuth = to.matched.some((record) => record.meta.requiresAuth !== false)
 
   if (requiresAuth && !token) {
-    // 需要登录但未登录，跳转到登录页
     next({ path: '/login', query: { redirect: to.fullPath } })
   } else if ((to.path === '/login' || to.path === '/register') && token) {
-    // 已登录用户访问登录/注册页，跳转到首页
     next('/')
   } else {
     next()
