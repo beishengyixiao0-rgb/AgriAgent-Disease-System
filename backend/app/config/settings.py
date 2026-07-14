@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     # ── 训练配置 ──────────────────────────────────────
     TRAIN_OUTPUT_DIR: str = "runs/train"  # 训练输出目录（模型权重、日志等）
     DATASET_BASE_DIR: str = "datasets"  # 数据集根目录
+    MODELS_DIR: str = "models"  # 模型权重目录（相对于 backend/）
+    DEFAULT_MODEL_NAME: str = "yolov11n.pt"  # 默认模型文件名
 
     # — 应用基础配置 —
     APP_NAME: str = "RSOD Agent Platform"

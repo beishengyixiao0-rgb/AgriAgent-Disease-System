@@ -11,6 +11,8 @@
 import os
 import tempfile
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, File, Form, UploadFile, status
 from fastapi.responses import JSONResponse
 

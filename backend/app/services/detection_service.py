@@ -102,7 +102,14 @@ class DetectionService:
         finally:
             db.close()
 
-        # 最终回退：预训练模型
+        # 回退：使用本地 models/ 目录下的默认模型
+        local_model = os.path.join(os.getcwd(), settings.MODELS_DIR, settings.DEFAULT_MODEL_NAME)
+        if os.path.exists(local_model):
+            logger.info("使用本地模型: %s", local_model)
+            return local_model
+
+        # 最终兜底：ultralytics 预训练模型（会联网下载）
+        logger.warning("本地模型不存在，使用 ultralytics 预训练模型")
         return "yolo11n.pt"
 
     @staticmethod

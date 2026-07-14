@@ -322,5 +322,15 @@ class DetectionAgent:
             }
 
 
-# 创建全局单例
-detection_agent = DetectionAgent()
+# 延迟初始化全局单例
+_detection_agent_instance = None
+
+def get_detection_agent() -> DetectionAgent:
+    """获取 DetectionAgent 单例（延迟初始化）"""
+    global _detection_agent_instance
+    if _detection_agent_instance is None:
+        _detection_agent_instance = DetectionAgent()
+    return _detection_agent_instance
+
+# 保持向后兼容
+detection_agent = None  # 使用时通过 get_detection_agent() 获取
