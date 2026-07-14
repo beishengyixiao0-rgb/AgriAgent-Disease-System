@@ -12,23 +12,23 @@
     cd rsod-agent-platform/backend
 
     # 评估训练好的 best.pt（默认验证集）
-    python tools/evaluate_model.py --weights runs/train/task_xxxxxxxx/weights/best.pt
+    python tools/evaluate_model.py --weights runs/train/task_001/weights/best.pt
 
     # 指定数据集和测试集
     python tools/evaluate_model.py \
-        --weights runs/train/task_xxxxxxxx/weights/best.pt \
-        --data datasets/rsod/yolo_dataset/data.yaml \
+        --weights runs/train/task_001/weights/best.pt \
+        --data ../datasets/plant_disease/data.yaml \
         --split test
 
     # 调整置信度阈值和 IoU 阈值
     python tools/evaluate_model.py \
-        --weights runs/train/task_xxxxxxxx/weights/best.pt \
+        --weights runs/train/task_001/weights/best.pt \
         --conf 0.25 --iou 0.45
 
     # 保存评估报告到指定目录
     python tools/evaluate_model.py \
-        --weights runs/train/task_xxxxxxxx/weights/best.pt \
-        --output models/eval_report
+        --weights runs/train/task_001/weights/best.pt \
+        --output models/plant_disease_v1.0.0
 
 依赖：
     pip install ultralytics
@@ -38,16 +38,37 @@ import argparse
 import json
 import os
 import sys
+from pathlib import Path
 from typing import Dict, Optional, cast
 
 # ── 项目路径 ──────────────────────────────────────────
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = BACKEND_DIR.parent
+
+
+def resolve_cli_path(path_value: str) -> str:
+    """
+    解析命令行传入的路径。
+
+    支持两种常见执行方式：
+    - 在 backend 目录下执行：runs/train/task_001/weights/best.pt
+    - 在项目根目录执行：backend/runs/train/task_001/weights/best.pt
+    """
+    path = Path(path_value)
+    if path.is_absolute():
+        return str(path)
+    cwd_path = Path.cwd() / path
+    if cwd_path.exists():
+        return str(cwd_path.resolve())
+    return str((PROJECT_ROOT / path).resolve())
 
 
 def find_data_yaml(weights_path: str) -> str:
     """
     根据权重路径自动查找 data.yaml
     """
+    weights_path = resolve_cli_path(weights_path)
+
     # 从权重路径向上查找
     task_dir = os.path.dirname(os.path.dirname(weights_path))
 
@@ -59,18 +80,26 @@ def find_data_yaml(weights_path: str) -> str:
                 line = line.strip()
                 if line.startswith("data:"):
                     data_path = line.split(":", 1)[1].strip()
-                    if os.path.exists(data_path):
-                        return data_path
+                    resolved_data_path = resolve_cli_path(data_path)
+                    if os.path.exists(resolved_data_path):
+                        return resolved_data_path
 
-    # 在 datasets/ 目录下查找
-    datasets_dir = os.path.join(PROJECT_ROOT, "datasets")
+    # 优先查找当前项目固定使用的数据集配置。
+    default_yaml = PROJECT_ROOT / "datasets" / "plant_disease" / "data.yaml"
+    if default_yaml.exists():
+        return str(default_yaml)
+
+    # 在 datasets/ 目录下查找，兼容其他检测场景。
+    datasets_dir = PROJECT_ROOT / "datasets"
     if os.path.exists(datasets_dir):
-        for scene_dir in os.listdir(datasets_dir):
-            yaml_path = os.path.join(
-                datasets_dir, scene_dir, "yolo_dataset", "data.yaml"
-            )
-            if os.path.exists(yaml_path):
-                return yaml_path
+        for scene_dir in datasets_dir.iterdir():
+            candidates = [
+                scene_dir / "data.yaml",
+                scene_dir / "yolo_dataset" / "data.yaml",
+            ]
+            for yaml_path in candidates:
+                if yaml_path.exists():
+                    return str(yaml_path)
 
     return ""
 
@@ -90,6 +119,11 @@ def run_evaluation(
     运行模型评估
     """
     from ultralytics import YOLO
+
+    weights_path = resolve_cli_path(weights_path)
+    data_yaml = resolve_cli_path(data_yaml)
+    if output_dir is not None:
+        output_dir = resolve_cli_path(output_dir)
 
     print(f"\n{'=' * 60}")
     print("  模型评估")
@@ -189,9 +223,9 @@ def print_report(report: dict):
     overall = report["overall"]
 
     print(f"\n{'=' * 60}")
-    print("  📊 评估报告")
+    print("  评估报告")
     print(f"{'=' * 60}")
-    print(f"\n  ▸ 整体指标:")
+    print(f"\n  - 整体指标:")
     print(f"    {'指标':<16} {'值':>10}")
     print(f"    {'─' * 26}")
     print(f"    {'Precision':<16} {overall['precision']:>10.4f}")
@@ -202,7 +236,7 @@ def print_report(report: dict):
     # 每类指标排序输出
     per_class = report["per_class"]
     if per_class:
-        print(f"\n  ▸ 每类 AP（按 mAP50 降序）:")
+        print(f"\n  - 每类 AP（按 mAP50 降序）:")
         print(f"    {'类别':<20} {'AP@50':>8} {'AP@50-95':>10}")
         print(f"    {'─' * 38}")
 
@@ -220,7 +254,7 @@ def print_report(report: dict):
         # 标出弱势类别
         weak_classes = [name for name, m in sorted_classes if m["ap50"] < 0.5]
         if weak_classes:
-            print(f"\n  ⚠ 弱势类别（AP@50 < 0.5）: {', '.join(weak_classes)}")
+            print(f"\n  弱势类别（AP@50 < 0.5）: {', '.join(weak_classes)}")
             print("    建议: 增加这些类别的训练样本，或检查标注质量")
 
     print(f"\n{'=' * 60}\n")
@@ -234,7 +268,7 @@ def main():
         epilog="""
 示例：
   # 评估 best.pt（自动查找 data.yaml）
-  python tools/evaluate_model.py --weights runs/train/task_xxxxxxxx/weights/best.pt
+  python tools/evaluate_model.py --weights runs/train/task_001/weights/best.pt
 
   # 在测试集上评估
   python tools/evaluate_model.py --weights path/to/best.pt --split test
@@ -243,7 +277,7 @@ def main():
   python tools/evaluate_model.py --weights path/to/best.pt --conf 0.25 --iou 0.45
 
   # 保存评估报告
-  python tools/evaluate_model.py --weights path/to/best.pt --output models/eval_report
+  python tools/evaluate_model.py --weights runs/train/task_001/weights/best.pt --output models/plant_disease_v1.0.0
         """,
     )
 
@@ -304,21 +338,24 @@ def main():
     args = parser.parse_args()
 
     # 验证权重文件
-    if not os.path.exists(args.weights):
-        print(f"[错误] 权重文件不存在: {args.weights}")
+    weights_path = resolve_cli_path(args.weights)
+    if not os.path.exists(weights_path):
+        print(f"[错误] 权重文件不存在: {weights_path}")
         sys.exit(1)
 
     # 查找 data.yaml
     data_yaml = args.data
     if not data_yaml:
-        data_yaml = find_data_yaml(args.weights)
+        data_yaml = find_data_yaml(weights_path)
+    else:
+        data_yaml = resolve_cli_path(data_yaml)
     if not data_yaml or not os.path.exists(data_yaml):
         print("[错误] 未找到 data.yaml，请使用 --data 参数指定")
         sys.exit(1)
 
     # 运行评估
     run_evaluation(
-        weights_path=args.weights,
+        weights_path=weights_path,
         data_yaml=data_yaml,
         split=args.split,
         conf=args.conf,

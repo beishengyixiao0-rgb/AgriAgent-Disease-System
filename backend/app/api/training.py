@@ -14,27 +14,23 @@
   - POST   /api/training/predict             上传图片进行预测
 """
 
+import base64
 import os
 import tempfile
-import base64
 
 import cv2
-import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api.auth import get_current_user
-from app.config.settings import settings
 from app.core.logger import get_logger
 from app.database.session import get_db
 from app.entity.db_models import DetectionScene, TrainingTask
 from app.entity.schemas import (
     ModelValidateRequest,
     ModelExportRequest,
-    TrainingMetricResponse,
     TrainingTaskCreate,
-    TrainingTaskResponse,
 )
 from app.training.training_service import training_service
 
@@ -74,22 +70,16 @@ async def start_training(
     # 3. 修正路径拼接问题
     scene_name_str = str(scene.name)
 
-    # 找到项目根目录 (team 目录)
-    api_dir = os.path.dirname(os.path.abspath(__file__))
-    app_dir = os.path.dirname(api_dir)
-    backend_dir = os.path.dirname(app_dir)
-    project_root = os.path.dirname(backend_dir)
-
-    # 拼接路径：team/datasets/场景名
-    dataset_path = os.path.join(project_root, "datasets", scene_name_str)
-    logger.info(f"数据集路径: {dataset_path}")
+    # 拼接路径：项目根目录/datasets/场景名
+    dataset_path = training_service.get_dataset_dir(scene_name_str)
+    logger.info("数据集路径: %s", dataset_path)
 
     # 将路径写入配置
     config["dataset_path"] = dataset_path
 
     # 检查 data.yaml 是否存在
-    data_yaml = os.path.join(dataset_path, "data.yaml")
-    if not os.path.exists(data_yaml):
+    data_yaml = dataset_path / "data.yaml"
+    if not data_yaml.exists():
         raise HTTPException(
             status_code=400,
             detail=f"data_yaml 不存在: {data_yaml}, 请先完成数据集准备",
@@ -192,16 +182,12 @@ async def get_results_csv(
 
     可用于离线分析或导出到其他工具
     """
-    results_path = os.path.join(
-        settings.TRAIN_OUTPUT_DIR,
-        f"task_{task_uuid}",
-        "results.csv",
-    )
-    if not os.path.exists(results_path):
+    results_path = training_service.get_task_results_path(task_uuid)
+    if not results_path.exists():
         raise HTTPException(status_code=404, detail="results.csv 文件不存在")
 
     return FileResponse(
-        path=results_path,
+        path=str(results_path),
         media_type="text/csv",
         filename=f"training_results_{task_uuid}.csv",
     )
@@ -334,8 +320,6 @@ async def predict_test_image(
     2. 使用 best.pt 进行推理
     3. 返回检测结果（标注图 + 检测统计）
     """
-    from ultralytics import YOLO
-
     # 验证文件类型
     allowed_types = {"image/jpeg", "image/png", "image/bmp", "image/webp"}
     if file.content_type not in allowed_types:
@@ -353,14 +337,8 @@ async def predict_test_image(
         raise HTTPException(status_code=400, detail="训练任务未完成，无法进行预测")
 
     # 定位 best.pt
-    weights_path = os.path.join(
-        os.getcwd(),
-        settings.TRAIN_OUTPUT_DIR,
-        f"task_{task.task_uuid}",
-        "weights",
-        "best.pt",
-    )
-    if not os.path.exists(weights_path):
+    weights_path = training_service.get_task_weights_path(task.task_uuid)
+    if not weights_path.exists():
         raise HTTPException(status_code=404, detail="模型权重文件不存在")
 
     # 保存上传文件到临时目录
@@ -374,7 +352,9 @@ async def predict_test_image(
 
     try:
         # 加载模型并推理
-        model = YOLO(weights_path)
+        from ultralytics import YOLO
+
+        model = YOLO(str(weights_path))
         results = model.predict(
             source=tmp_path,
             conf=conf,
