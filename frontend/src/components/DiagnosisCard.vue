@@ -25,6 +25,10 @@
         <strong>{{ inferenceTime }}</strong>
         <span>推理耗时</span>
       </div>
+      <div v-if="isBatchResult" class="summary-item">
+        <strong>{{ resultData.total_images ?? batchImages.length }}</strong>
+        <span>图片数量</span>
+      </div>
     </div>
 
     <div v-if="isCameraResult" class="camera-summary">
@@ -116,7 +120,28 @@
       </div>
     </div>
 
-    <div v-if="annotatedImage" class="diagnosis-image-section">
+    <!-- 批量检测：逐张展示后端返回的标注图片 -->
+    <div v-if="isBatchResult && batchImages.length" class="batch-results-section">
+      <div class="section-title">逐图检测结果（{{ batchImages.length }}）</div>
+      <div class="batch-results-grid">
+        <button
+          v-for="(image, index) in batchImages"
+          :key="`${image.name}-${index}`"
+          type="button"
+          class="batch-result-card"
+          @click="previewBatchImage(image)"
+        >
+          <img :src="image.src" :alt="`${image.name} 检测结果`" />
+          <span class="batch-result-info">
+            <strong :title="image.name">{{ image.name }}</strong>
+            <span>{{ image.objectCount }} 个目标</span>
+            <span v-if="image.inferenceTime !== null">{{ image.inferenceTime }} ms</span>
+          </span>
+        </button>
+      </div>
+    </div>
+
+    <div v-if="annotatedImage && !isBatchResult" class="diagnosis-image-section">
       <img
         :src="annotatedImage"
         class="diagnosis-image"
@@ -182,11 +207,14 @@
       class="frame-preview-modal"
       role="dialog"
       aria-modal="true"
-      aria-label="视频关键帧预览"
+      :aria-label="previewImageTitle || '检测图片预览'"
       @click.self="closeVideoFramePreview"
     >
       <button type="button" class="preview-close" @click="closeVideoFramePreview">×</button>
-      <img :src="previewFrameUrl" alt="视频关键帧预览" />
+      <div class="preview-content">
+        <img :src="previewFrameUrl" :alt="previewImageTitle || '检测图片预览'" />
+        <div v-if="previewImageTitle" class="preview-title">{{ previewImageTitle }}</div>
+      </div>
     </div>
 
   </div>
@@ -207,6 +235,11 @@ const hasApiResult = computed(() => Boolean(apiResult.value))
 const resultData = computed(() => apiResult.value?.data || apiResult.value || {})
 const isVideoResult = computed(() => resultData.value.type === 'video')
 const isCameraResult = computed(() => resultData.value.type === 'camera')
+const isBatchResult = computed(() => (
+  Array.isArray(resultData.value.annotated_images)
+  || resultData.value.total_images > 1
+  || resultData.value.source === 'zip'
+))
 
 const detections = computed(() => {
   const result = resultData.value
@@ -311,6 +344,50 @@ const videoFrames = computed(() => (
 ))
 const thumbnailFrames = computed(() => videoFrames.value.slice(0, 12))
 const previewFrameUrl = ref('')
+const previewImageTitle = ref('')
+
+const getBaseName = (path = '') => String(path).split(/[\\/]/).pop() || ''
+
+const getAnnotatedImageSource = (image = {}) => {
+  const source = image.annotated_image_url
+    || image.result_image_url
+    || image.image_url
+    || image.annotated_image_base64
+    || image.annotated_image
+    || image.image_base64
+    || ''
+
+  if (!source || source.startsWith('data:') || source.startsWith('http') || source.startsWith('/')) {
+    return source
+  }
+
+  return `data:image/jpeg;base64,${source}`
+}
+
+const batchImages = computed(() => {
+  const images = Array.isArray(resultData.value.annotated_images)
+    ? resultData.value.annotated_images
+    : []
+
+  return images.map((image, index) => {
+    const backendName = image.image_path || image.filename || image.file_name || ''
+    const name = image.original_filename || backendName || `图片 ${index + 1}`
+    const imageDetections = detections.value.filter((detection) => {
+      const detectionName = detection.image_path || detection.filename || detection.file_name || ''
+      return getBaseName(detectionName) === getBaseName(backendName)
+    })
+    const perImageInference = image.inference_time
+      ?? imageDetections[0]?.inference_time
+      ?? null
+
+    return {
+      name: getBaseName(name) || `图片 ${index + 1}`,
+      src: getAnnotatedImageSource(image),
+      objectCount: image.object_count ?? image.total_objects ?? imageDetections.length,
+      inferenceTime: perImageInference == null ? null : Number(perImageInference).toFixed(1),
+    }
+  }).filter((image) => image.src)
+})
 
 const getVideoFrameImage = (frame) => {
   const source = frame.annotated_image_base64
@@ -328,10 +405,17 @@ const getVideoFrameImage = (frame) => {
 
 const previewVideoFrame = (frame) => {
   previewFrameUrl.value = getVideoFrameImage(frame)
+  previewImageTitle.value = `关键帧 ${frame.frame_index ?? ''}`.trim()
+}
+
+const previewBatchImage = (image) => {
+  previewFrameUrl.value = image.src
+  previewImageTitle.value = image.name
 }
 
 const closeVideoFramePreview = () => {
   previewFrameUrl.value = ''
+  previewImageTitle.value = ''
 }
 
 const getDetectionName = (detection, index) => (
@@ -401,7 +485,7 @@ const formatBoundingBox = (bbox) => (
 
 .result-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
   gap: 10px;
   margin-bottom: 18px;
 }
@@ -585,6 +669,61 @@ const formatBoundingBox = (bbox) => (
   border: 1px solid #e5e7eb;
 }
 
+.batch-results-section {
+  margin-bottom: 18px;
+}
+
+.batch-results-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 3px;
+}
+
+.batch-result-card {
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: white;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.batch-result-card:hover {
+  border-color: #86efac;
+  transform: translateY(-1px);
+}
+
+.batch-result-card img {
+  display: block;
+  width: 100%;
+  height: 150px;
+  object-fit: contain;
+  background: #f9fafb;
+}
+
+.batch-result-info {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 8px;
+  padding: 9px 10px;
+  color: #6b7280;
+  font-size: 11px;
+}
+
+.batch-result-info strong {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  color: #374151;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .video-result {
   margin-bottom: 18px;
 }
@@ -699,11 +838,24 @@ const formatBoundingBox = (bbox) => (
   background: rgba(17, 24, 39, 0.82);
 }
 
-.frame-preview-modal img {
+.preview-content {
   max-width: min(100%, 1100px);
-  max-height: 90vh;
+  max-height: 94vh;
+}
+
+.frame-preview-modal img {
+  display: block;
+  max-width: min(100%, 1100px);
+  max-height: 86vh;
   border-radius: 12px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+
+.preview-title {
+  margin-top: 10px;
+  color: white;
+  text-align: center;
+  word-break: break-all;
 }
 
 .preview-close {
@@ -743,6 +895,15 @@ const formatBoundingBox = (bbox) => (
 
   .frames-container {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .batch-results-grid {
+    grid-template-columns: 1fr;
+    max-height: 560px;
+  }
+
+  .batch-result-card img {
+    height: 190px;
   }
 
   .frame-card img {

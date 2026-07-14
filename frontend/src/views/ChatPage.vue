@@ -415,11 +415,21 @@ async function handleQuickDetect(type) {
         return
       }
 
-      loadingMessage.content = `批量检测完成！共 ${result.total_objects ?? 0} 个目标。`
+      const displayResult = !isZip && Array.isArray(result.annotated_images)
+        ? {
+            ...result,
+            annotated_images: result.annotated_images.map((image, index) => ({
+              ...image,
+              original_filename: files[index]?.name || image.image_path,
+            })),
+          }
+        : result
+
+      loadingMessage.content = `批量检测完成！共 ${displayResult.total_objects ?? 0} 个目标。`
       loadingMessage.loading = false
       loadingMessage.type = 'diagnosis'
-      loadingMessage.detectionResult = result
-      loadingMessage.annotatedImage = result.annotated_image_url || result.result_image_url || ''
+      loadingMessage.detectionResult = displayResult
+      loadingMessage.annotatedImage = displayResult.annotated_image_url || displayResult.result_image_url || ''
     } catch (error) {
       loadingMessage.content = `批量检测失败：${getErrorMessage(error)}`
       loadingMessage.loading = false
