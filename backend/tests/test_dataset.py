@@ -83,9 +83,13 @@ def test_dataset(db_session: Session):
     db_session.add(dataset)
     db_session.commit()
     db_session.refresh(dataset)
+    dataset_id = dataset.id
     yield dataset
-    db_session.delete(dataset)
-    db_session.commit()
+    db_session.expire_all()
+    remaining = db_session.get(Dataset, dataset_id)
+    if remaining:
+        db_session.delete(remaining)
+        db_session.commit()
 
 
 class TestDatasetList:
