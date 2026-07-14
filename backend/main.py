@@ -56,14 +56,14 @@ def custom_openapi():
         return app.openapi_schema
     openapi_schema = original_openapi()
     openapi_schema["components"]["securitySchemes"] = {
-        "Bearer": {
-            "type": "http",
-            "scheme": "bearer",
-            "bearerFormat": "JWT",
-            "description": "使用登录后生成的 JWT Token 进行验证，格式：Bearer <your_access_token>",
+        "BearerAuth": {
+            "type": "apiKey",
+            "in": "header",
+            "name": "Authorization",
+            "description": "使用登录后生成的 JWT Token 进行验证，直接输入 Token 值即可",
         }
     }
-    openapi_schema["security"] = [{"Bearer": []}]
+    openapi_schema["security"] = [{"BearerAuth": []}]
     app.openapi_schema = openapi_schema
     return openapi_schema
 

@@ -43,7 +43,7 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/api/training", tags=["模型训练"])
 
 
-@router.post("/start")
+@router.post("/start", openapi_extra={"security": [{"BearerAuth": []}]})
 async def start_training(
     request: TrainingTaskCreate,
     db: Session = Depends(get_db),
@@ -126,7 +126,7 @@ async def start_training(
     }
 
 
-@router.get("/tasks")
+@router.get("/tasks", openapi_extra={"security": [{"BearerAuth": []}]})
 async def list_training_tasks(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
@@ -136,7 +136,7 @@ async def list_training_tasks(
     return {"total": len(tasks), "items": tasks}
 
 
-@router.get("/status/{task_id}")
+@router.get("/status/{task_id}", openapi_extra={"security": [{"BearerAuth": []}]})
 async def get_training_status(
     task_id: int,
     db: Session = Depends(get_db),
@@ -154,7 +154,7 @@ async def get_training_status(
     return status
 
 
-@router.get("/metrics/{task_id}")
+@router.get("/metrics/{task_id}", openapi_extra={"security": [{"BearerAuth": []}]})
 async def get_training_metrics(
     task_id: int,
     db: Session = Depends(get_db),
@@ -169,7 +169,7 @@ async def get_training_metrics(
     return {"task_id": task_id, "total": len(metrics), "metrics": metrics}
 
 
-@router.post("/stop/{task_id}")
+@router.post("/stop/{task_id}", openapi_extra={"security": [{"BearerAuth": []}]})
 async def stop_training(
     task_id: int,
     db: Session = Depends(get_db),
@@ -182,7 +182,7 @@ async def stop_training(
     return result
 
 
-@router.get("/results/{task_uuid}")
+@router.get("/results/{task_uuid}", openapi_extra={"security": [{"BearerAuth": []}]})
 async def get_results_csv(
     task_uuid: str,
     current_user=Depends(get_current_user),
@@ -207,7 +207,7 @@ async def get_results_csv(
     )
 
 
-@router.post("/validate/{task_id}")
+@router.post("/validate/{task_id}", openapi_extra={"security": [{"BearerAuth": []}]})
 async def validate_model(
     task_id: int,
     request: ModelValidateRequest = None,
@@ -246,7 +246,7 @@ async def validate_model(
     return result
 
 
-@router.post("/export/{task_id}")
+@router.post("/export/{task_id}", openapi_extra={"security": [{"BearerAuth": []}]})
 async def export_model(
     task_id: int,
     request: ModelExportRequest = None,
@@ -287,7 +287,7 @@ async def export_model(
     return result
 
 
-@router.get("/download/{task_id}")
+@router.get("/download/{task_id}", openapi_extra={"security": [{"BearerAuth": []}]})
 async def download_model(
     task_id: int,
     db: Session = Depends(get_db),
@@ -317,7 +317,7 @@ async def download_model(
     )
 
 
-@router.post("/predict")
+@router.post("/predict", openapi_extra={"security": [{"BearerAuth": []}]})
 async def predict_test_image(
     file: UploadFile = File(..., description="测试图片"),
     task_id: int = Form(..., description="训练任务 ID（使用哪个模型）"),
