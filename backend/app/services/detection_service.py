@@ -24,6 +24,7 @@
 import base64
 import os
 import shutil
+import subprocess
 import tempfile
 import zipfile
 from datetime import datetime
@@ -39,6 +40,7 @@ from app.core.logger import get_logger
 from app.database.session import SessionLocal
 from app.entity.db_models import DetectionResult, DetectionScene, DetectionTask, ModelVersion
 from app.storage.minio_client import MinIOClient
+from app.storage.redis_client import redis_client
 from app.training.training_service import TrainingService
 
 logger = get_logger(__name__)
@@ -138,9 +140,29 @@ class DetectionService:
     def _resolve_scene_id(db: Session, scene_id: int | None) -> int | None:
         """快捷接口未传场景时使用第一个启用场景，保证检测记录可以持久化。"""
         if scene_id is not None:
-            return scene_id
+            scene = (
+                db.query(DetectionScene)
+                .filter(
+                    DetectionScene.id == scene_id,
+                    DetectionScene.is_active.is_(True),
+                )
+                .first()
+            )
+            return scene.id if scene else None
         scene = db.query(DetectionScene).filter(DetectionScene.is_active.is_(True)).first()
         return scene.id if scene else None
+
+    @staticmethod
+    def _set_video_progress(task_id: int, progress: int, message: str) -> None:
+        """写入短生命周期的轮询进度；Redis 不可用时由客户端自动降级。"""
+        try:
+            redis_client.set_json(
+                f"video_task:{task_id}",
+                {"status": "processing", "progress": progress, "message": message},
+                expire=3600,
+            )
+        except Exception as exc:
+            logger.warning("更新视频任务进度失败: %s", exc)
 
     @staticmethod
     def _save_task_and_results(
@@ -548,32 +570,34 @@ class DetectionService:
             }
         """
         db = SessionLocal()
+        cap = None
+        video_writer = None
+        output_video_path = None
+        converted_video_path = None
         try:
-            model = self._get_model(scene_id)
+            if not 0 <= conf <= 1 or not 0 <= iou <= 1:
+                raise ValueError("conf 和 iou 必须在 0 到 1 之间")
+            if frame_sample_rate < 1:
+                raise ValueError("frame_sample_rate 必须大于 0")
+            if not 1 <= max_frames <= 300:
+                raise ValueError("max_frames 必须在 1 到 300 之间")
 
-            cap = cv2.VideoCapture(video_path)
-            if not cap.isOpened():
-                return {"error": f"无法打开视频文件: {video_path}"}
-
-            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            duration_seconds = total_frames / fps if fps > 0 else 0
-
-            logger.info(
-                "视频信息: %d×%d, %.1ffps, %d 帧, %.1f 秒",
-                width,
-                height,
-                fps,
-                total_frames,
-                duration_seconds,
-            )
-
-            if not task_id:
+            if task_id:
+                task = (
+                    db.query(DetectionTask).filter(DetectionTask.id == task_id).first()
+                )
+                if not task:
+                    raise ValueError("视频检测任务不存在")
+                scene_id = task.scene_id
+            else:
+                scene_id = self._resolve_scene_id(db, scene_id)
+                if not scene_id:
+                    raise ValueError("指定场景不存在或未启用")
+                if not user_id:
+                    raise ValueError("视频检测需要登录用户")
                 task = DetectionTask(
-                    user_id=user_id or 0,
-                    scene_id=scene_id or 1,
+                    user_id=user_id,
+                    scene_id=scene_id,
                     task_type="video",
                     status="processing",
                     total_images=0,
@@ -583,10 +607,28 @@ class DetectionService:
                 db.add(task)
                 db.flush()
                 task_id = task.id
-            else:
-                task = (
-                    db.query(DetectionTask).filter(DetectionTask.id == task_id).first()
-                )
+
+            model = self._get_model(scene_id)
+            cap = cv2.VideoCapture(video_path)
+            if not cap.isOpened():
+                raise ValueError("无法打开视频文件")
+
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            duration_seconds = total_frames / fps if fps > 0 else 0
+            if total_frames <= 0 or width <= 0 or height <= 0:
+                raise ValueError("视频文件中没有可处理的画面")
+
+            logger.info(
+                "视频信息: %d×%d, %.1ffps, %d 帧, %.1f 秒",
+                width,
+                height,
+                fps,
+                total_frames,
+                duration_seconds,
+            )
 
             effective_interval = max(frame_sample_rate, total_frames // max_frames)
             sample_indices = list(range(0, total_frames, effective_interval))
@@ -603,6 +645,7 @@ class DetectionService:
             total_inference_time = 0
             class_counts = {}
             sampled_count = 0
+            sampled_frames_seen = 0
             last_detections = []
             last_frame = None
 
@@ -756,26 +799,66 @@ class DetectionService:
                     else:
                         video_writer.write(frame)
 
+                sampled_frames_seen += 1
+                progress = min(
+                    99,
+                    max(1, int(sampled_frames_seen * 100 / len(sample_indices))),
+                )
+                self._set_video_progress(
+                    task_id,
+                    progress,
+                    f"视频处理中，已采样 {sampled_frames_seen}/{len(sample_indices)} 帧",
+                )
                 frame_idx += 1
 
             cap.release()
+            cap = None
             video_writer.release()
+            video_writer = None
 
             annotated_video_url = None
+            upload_video_path = output_video_path
+            ffmpeg_path = shutil.which("ffmpeg")
+            if ffmpeg_path:
+                converted_video_path = f"{output_video_path}.h264.mp4"
+                try:
+                    subprocess.run(
+                        [
+                            ffmpeg_path,
+                            "-y",
+                            "-i",
+                            output_video_path,
+                            "-c:v",
+                            "libx264",
+                            "-pix_fmt",
+                            "yuv420p",
+                            "-movflags",
+                            "+faststart",
+                            converted_video_path,
+                        ],
+                        check=True,
+                        capture_output=True,
+                        timeout=120,
+                    )
+                    upload_video_path = converted_video_path
+                except (OSError, subprocess.SubprocessError) as exc:
+                    logger.warning("ffmpeg 转码失败，使用原始 mp4v 视频: %s", exc)
             try:
                 minio_client = MinIOClient()
                 object_name = f"detections/{task_id}/annotated_video.mp4"
                 annotated_video_url = minio_client.upload_file(
-                    object_name, output_video_path
+                    object_name, upload_video_path
                 )
                 logger.info("标注视频已上传: %s", object_name)
             except Exception as e:
                 logger.warning("标注视频上传 MinIO 失败: %s", str(e))
 
-            try:
-                os.unlink(output_video_path)
-            except Exception:
-                pass
+            for path in (output_video_path, converted_video_path):
+                if path and os.path.exists(path):
+                    try:
+                        os.unlink(path)
+                    except OSError:
+                        pass
 
             if task:
                 task.status = "completed"
@@ -795,7 +878,8 @@ class DetectionService:
             return {
                 "task_id": task_id,
                 "total_frames": total_frames,
-                "processed_frames": len(key_frames),
+                "processed_frames": sampled_count,
+                "sampled_frames": len(sample_indices),
                 "frame_sample_rate": frame_sample_rate,
                 "fps": round(fps, 2),
                 "duration_seconds": round(duration_seconds, 2),
@@ -809,6 +893,7 @@ class DetectionService:
 
         except Exception as e:
             logger.error("视频检测异常: %s", str(e), exc_info=True)
+            db.rollback()
             if task_id:
                 task = (
                     db.query(DetectionTask).filter(DetectionTask.id == task_id).first()
@@ -819,6 +904,16 @@ class DetectionService:
                     db.commit()
             return {"error": f"视频检测失败: {str(e)}"}
         finally:
+            if cap is not None:
+                cap.release()
+            if video_writer is not None:
+                video_writer.release()
+            for path in (output_video_path, converted_video_path):
+                if path and os.path.exists(path):
+                    try:
+                        os.unlink(path)
+                    except OSError:
+                        pass
             db.close()
 
 

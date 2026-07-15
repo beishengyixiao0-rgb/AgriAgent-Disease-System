@@ -16,8 +16,8 @@
 
 import os
 import time
-from typing import Dict, Tuple
 
+from app.core.security import decode_access_token
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -42,27 +42,43 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
 
     DEFAULT_LIMIT = {"limit": 100, "window": 60}
 
+    @staticmethod
+    def _get_authenticated_user_id(request: Request) -> str | None:
+        """中间件早于路由依赖执行，直接从有效 JWT 中提取限流维度。"""
+        authorization = request.headers.get("Authorization", "").strip()
+        if authorization.lower().startswith("bearer "):
+            authorization = authorization[7:]
+        if not authorization:
+            return None
+        try:
+            subject = decode_access_token(authorization).get("sub")
+            return str(subject) if subject is not None else None
+        except Exception:
+            return None
+
     async def dispatch(self, request: Request, call_next):
         if DISABLE_RATE_LIMIT:
             return await call_next(request)
         path = request.url.path
 
+        rate_limit_path = path
         for pattern, config in self.RATE_LIMITS.items():
             if path.startswith(pattern):
                 limit = config["limit"]
                 window = config["window"]
+                rate_limit_path = pattern
                 break
         else:
             limit = self.DEFAULT_LIMIT["limit"]
             window = self.DEFAULT_LIMIT["window"]
 
         client_ip = request.client.host if request.client else "unknown"
-        user_id = getattr(request.state, "user_id", None)
+        user_id = self._get_authenticated_user_id(request)
 
         if user_id:
-            key = f"rate_limit:{path}:user:{user_id}"
+            key = f"rate_limit:{rate_limit_path}:user:{user_id}"
         else:
-            key = f"rate_limit:{path}:ip:{client_ip}"
+            key = f"rate_limit:{rate_limit_path}:ip:{client_ip}"
 
         current_time = int(time.time())
         window_key = f"{key}:{current_time // window}"

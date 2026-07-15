@@ -29,12 +29,36 @@ from app.storage.redis_client import redis_client
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/detection", tags=["快捷检测"])
+MAX_VIDEO_SIZE_BYTES = 50 * 1024 * 1024
+VIDEO_UPLOAD_CHUNK_SIZE = 1024 * 1024
 
 
 def _validate_file(file: UploadFile, suffixes: set[str]) -> None:
     """在保存临时文件前校验客户端文件扩展名。"""
     if Path(file.filename or "").suffix.lower() not in suffixes:
         raise HTTPException(status_code=400, detail="不支持的文件类型")
+
+
+async def _save_video_upload(file: UploadFile, suffix: str) -> tuple[str, int]:
+    """分块保存上传视频，避免将任意大小的文件一次性读入内存。"""
+    tmp_path = None
+    total_size = 0
+    try:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp_path = tmp.name
+            while chunk := await file.read(VIDEO_UPLOAD_CHUNK_SIZE):
+                total_size += len(chunk)
+                if total_size > MAX_VIDEO_SIZE_BYTES:
+                    raise HTTPException(status_code=400, detail="视频文件不能超过 50MB")
+                tmp.write(chunk)
+        return tmp_path, total_size
+    except Exception:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        raise
 
 
 @router.post("/single", summary="单图检测")
@@ -165,6 +189,7 @@ async def get_detection_status(
 async def detect_video_api(
     file: UploadFile = File(..., description="视频文件（mp4/avi/mov）"),
     conf: float = Form(0.25, description="置信度阈值"),
+    iou: float = Form(0.45, description="NMS IoU 阈值"),
     frame_sample_rate: int = Form(5, description="帧采样间隔（每 N 帧取 1 帧）"),
     max_frames: int = Form(50, description="最多处理的关键帧数量"),
     scene_id: int = Form(None, description="场景 ID"),
@@ -188,29 +213,47 @@ async def detect_video_api(
             },
         )
 
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        content = await file.read()
-        tmp.write(content)
-        tmp_path = tmp.name
+    if not 0 <= conf <= 1 or not 0 <= iou <= 1:
+        raise HTTPException(status_code=400, detail="conf 和 iou 必须在 0 到 1 之间")
+    if frame_sample_rate < 1:
+        raise HTTPException(status_code=400, detail="frame_sample_rate 必须大于 0")
+    if not 1 <= max_frames <= 300:
+        raise HTTPException(status_code=400, detail="max_frames 必须在 1 到 300 之间")
+
+    resolved_scene_id = detection_service._resolve_scene_id(db, scene_id)
+    if not resolved_scene_id:
+        raise HTTPException(status_code=400, detail="指定场景不存在或未启用")
+
+    tmp_path, file_size = await _save_video_upload(file, suffix)
+    user_id = current_user.id
 
     logger.info(
         "视频文件已保存: %s (%.2f MB), 用户: %s",
         tmp_path,
-        len(content) / (1024 * 1024),
+        file_size / (1024 * 1024),
         current_user.username,
     )
 
-    task = DetectionTask(
-        user_id=current_user.id,
-        scene_id=scene_id or 1,
-        task_type="video",
-        status="processing",
-        conf_threshold=conf,
-    )
-    db.add(task)
-    db.flush()
-    task_id = task.id
-    db.commit()
+    try:
+        task = DetectionTask(
+            user_id=user_id,
+            scene_id=resolved_scene_id,
+            task_type="video",
+            status="processing",
+            conf_threshold=conf,
+            iou_threshold=iou,
+        )
+        db.add(task)
+        db.flush()
+        task_id = task.id
+        db.commit()
+    except Exception:
+        db.rollback()
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
     redis_client.set_json(f"video_task:{task_id}", {
         "status": "processing",
@@ -223,10 +266,11 @@ async def detect_video_api(
             result = detection_service.detect_video(
                 video_path=tmp_path,
                 conf=conf,
+                iou=iou,
                 frame_sample_rate=frame_sample_rate,
                 max_frames=max_frames,
-                scene_id=scene_id,
-                user_id=current_user.id,
+                scene_id=resolved_scene_id,
+                user_id=user_id,
                 task_id=task_id,
             )
 
@@ -279,20 +323,20 @@ async def get_video_detection_status(
 
     轮询间隔建议：1-2 秒
     """
-    progress_info = redis_client.get_json(f"video_task:{task_id}")
-
-    if progress_info:
-        return {
-            "task_id": task_id,
-            **progress_info,
-        }
-
-    task = db.query(DetectionTask).filter(DetectionTask.id == task_id).first()
+    task = (
+        db.query(DetectionTask)
+        .filter(DetectionTask.id == task_id, DetectionTask.user_id == current_user.id)
+        .first()
+    )
     if not task:
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
             content={"error": "任务不存在"},
         )
+
+    progress_info = redis_client.get_json(f"video_task:{task_id}")
+    if progress_info:
+        return {"task_id": task_id, **progress_info}
 
     result = {
         "task_id": task.id,

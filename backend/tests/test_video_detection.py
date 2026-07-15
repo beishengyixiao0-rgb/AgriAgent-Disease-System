@@ -6,13 +6,34 @@
 """
 
 import os
+import threading
 import time
 
 import pytest
 
+from app.entity.db_models import DetectionScene, DetectionTask
+from app.storage.redis_client import redis_client
 from app.services.detection_service import detection_service
+import app.api.detection as detection_api
 
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "fixtures")
+
+
+@pytest.fixture
+def video_scene(db_session):
+    scene = db_session.query(DetectionScene).filter_by(name="video_test_scene").first()
+    if not scene:
+        scene = DetectionScene(
+            name="video_test_scene",
+            display_name="视频检测测试场景",
+            category="test",
+            class_names=["object"],
+            is_active=True,
+        )
+        db_session.add(scene)
+        db_session.commit()
+        db_session.refresh(scene)
+    return scene
 
 
 def auth_headers(client, username="video_test_user"):
@@ -58,19 +79,18 @@ def test_video_rejects_unsupported_format(client):
     assert "不支持" in response.json()["error"]
 
 
-def test_video_accepts_mp4(client, monkeypatch):
-    """mp4 格式应被接受。"""
-    headers = auth_headers(client, "video_mp4_user")
+def test_video_accepts_mp4_for_normal_user(client, user_headers, video_scene, monkeypatch):
+    """普通用户可上传视频进行检测。"""
 
-    def fake_detect(video_path, conf, frame_sample_rate, max_frames, scene_id, user_id, task_id):
+    def fake_detect(video_path, conf, iou, frame_sample_rate, max_frames, scene_id, user_id, task_id):
         return {"task_id": task_id, "total_frames": 100, "processed_frames": 10, "total_objects": 0}
 
     monkeypatch.setattr(detection_service, "detect_video", fake_detect)
     response = client.post(
         "/api/detection/video",
-        headers=headers,
+        headers=user_headers,
         files={"file": ("test.mp4", b"fake-video", "video/mp4")},
-        data={"conf": 0.25, "frame_sample_rate": 5, "max_frames": 50},
+        data={"conf": 0.25, "frame_sample_rate": 5, "max_frames": 50, "scene_id": video_scene.id},
     )
     assert response.status_code == 200
     assert "task_id" in response.json()
@@ -79,20 +99,23 @@ def test_video_accepts_mp4(client, monkeypatch):
 # ── 参数传递测试 ─────────────────────────────────────────────
 
 
-def test_video_detection_passes_parameters(client, monkeypatch):
+def test_video_detection_passes_parameters(client, video_scene, monkeypatch):
     """验证参数正确传递给检测服务。"""
     headers = auth_headers(client, "video_params_user")
     captured = {}
+    completed = threading.Event()
 
-    def fake_detect(video_path, conf, frame_sample_rate, max_frames, scene_id, user_id, task_id):
+    def fake_detect(video_path, conf, iou, frame_sample_rate, max_frames, scene_id, user_id, task_id):
         captured.update({
             "conf": conf,
+            "iou": iou,
             "frame_sample_rate": frame_sample_rate,
             "max_frames": max_frames,
             "scene_id": scene_id,
             "user_id": user_id,
             "task_id": task_id,
         })
+        completed.set()
         return {"task_id": task_id, "total_frames": 100, "processed_frames": 10, "total_objects": 0}
 
     monkeypatch.setattr(detection_service, "detect_video", fake_detect)
@@ -100,13 +123,15 @@ def test_video_detection_passes_parameters(client, monkeypatch):
         "/api/detection/video",
         headers=headers,
         files={"file": ("test.mp4", b"fake-video", "video/mp4")},
-        data={"conf": 0.35, "frame_sample_rate": 10, "max_frames": 30, "scene_id": 2},
+        data={"conf": 0.35, "iou": 0.5, "frame_sample_rate": 10, "max_frames": 30, "scene_id": video_scene.id},
     )
     assert response.status_code == 200
+    assert completed.wait(1)
     assert captured["conf"] == 0.35
+    assert captured["iou"] == 0.5
     assert captured["frame_sample_rate"] == 10
     assert captured["max_frames"] == 30
-    assert captured["scene_id"] == 2
+    assert captured["scene_id"] == video_scene.id
     assert captured["user_id"] > 0
 
 
@@ -118,6 +143,50 @@ def test_video_status_not_found(client):
     headers = auth_headers(client, "video_status_user")
     response = client.get("/api/detection/video/status/99999", headers=headers)
     assert response.status_code == 404
+
+
+def test_video_status_rejects_other_users_task(client, db_session, admin_user, user_headers, video_scene):
+    """检测任务及 Redis 中的结果只能由创建者读取。"""
+    task = DetectionTask(
+        user_id=admin_user.id,
+        scene_id=video_scene.id,
+        task_type="video",
+        status="processing",
+    )
+    db_session.add(task)
+    db_session.commit()
+    db_session.refresh(task)
+    redis_client.set_json(
+        f"video_task:{task.id}",
+        {"status": "completed", "progress": 100, "result": {"secret": "owner-only"}},
+        expire=60,
+    )
+
+    response = client.get(f"/api/detection/video/status/{task.id}", headers=user_headers)
+
+    assert response.status_code == 404
+
+
+@pytest.mark.parametrize("data", [{"frame_sample_rate": 0}, {"max_frames": 0}, {"conf": 1.1}])
+def test_video_rejects_invalid_parameters(client, user_headers, video_scene, data):
+    response = client.post(
+        "/api/detection/video",
+        headers=user_headers,
+        files={"file": ("test.mp4", b"fake-video", "video/mp4")},
+        data={"scene_id": video_scene.id, **data},
+    )
+    assert response.status_code == 400
+
+
+def test_video_rejects_oversized_upload(client, user_headers, video_scene, monkeypatch):
+    monkeypatch.setattr(detection_api, "MAX_VIDEO_SIZE_BYTES", 10)
+    response = client.post(
+        "/api/detection/video",
+        headers=user_headers,
+        files={"file": ("test.mp4", b"01234567890", "video/mp4")},
+        data={"scene_id": video_scene.id},
+    )
+    assert response.status_code == 400
 
 
 # ── 真实视频文件集成测试 ─────────────────────────────────────
@@ -133,12 +202,12 @@ def _has_test_video():
 
 
 @pytest.mark.skipif(not _has_test_video(), reason="tests/fixtures/ 目录下没有视频文件")
-def test_video_upload_with_real_file(client, monkeypatch):
+def test_video_upload_with_real_file(client, video_scene, monkeypatch):
     """使用真实视频文件测试上传流程。"""
     video_path = _has_test_video()
     headers = auth_headers(client, "video_real_user")
 
-    def fake_detect(video_path, conf, frame_sample_rate, max_frames, scene_id, user_id, task_id):
+    def fake_detect(video_path, conf, iou, frame_sample_rate, max_frames, scene_id, user_id, task_id):
         return {
             "task_id": task_id,
             "total_frames": 150,
@@ -158,7 +227,7 @@ def test_video_upload_with_real_file(client, monkeypatch):
             "/api/detection/video",
             headers=headers,
             files={"file": (os.path.basename(video_path), f, "video/mp4")},
-            data={"conf": 0.25, "frame_sample_rate": 5, "max_frames": 50},
+            data={"conf": 0.25, "frame_sample_rate": 5, "max_frames": 50, "scene_id": video_scene.id},
         )
 
     assert response.status_code == 200
@@ -169,12 +238,12 @@ def test_video_upload_with_real_file(client, monkeypatch):
 
 
 @pytest.mark.skipif(not _has_test_video(), reason="tests/fixtures/ 目录下没有视频文件")
-def test_video_detection_full_flow(client, monkeypatch):
+def test_video_detection_full_flow(client, video_scene, monkeypatch):
     """使用真实视频文件测试完整流程：上传 → 等待 → 查询结果。"""
     video_path = _has_test_video()
     headers = auth_headers(client, "video_flow_user")
 
-    def fake_detect(video_path, conf, frame_sample_rate, max_frames, scene_id, user_id, task_id):
+    def fake_detect(video_path, conf, iou, frame_sample_rate, max_frames, scene_id, user_id, task_id):
         time.sleep(0.5)  # 模拟处理时间
         return {
             "task_id": task_id,
@@ -196,7 +265,7 @@ def test_video_detection_full_flow(client, monkeypatch):
             "/api/detection/video",
             headers=headers,
             files={"file": (os.path.basename(video_path), f, "video/mp4")},
-            data={"conf": 0.25, "frame_sample_rate": 5, "max_frames": 50},
+            data={"conf": 0.25, "frame_sample_rate": 5, "max_frames": 50, "scene_id": video_scene.id},
         )
     assert upload_resp.status_code == 200
     task_id = upload_resp.json()["task_id"]

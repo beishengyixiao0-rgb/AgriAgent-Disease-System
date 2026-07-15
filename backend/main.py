@@ -52,6 +52,8 @@ original_openapi = app.openapi
 
 
 def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
     openapi_schema = original_openapi()
     openapi_schema["components"]["securitySchemes"] = {
         "BearerAuth": {
@@ -61,7 +63,6 @@ def custom_openapi():
             "description": "请输入完整的Authorization头，格式: Bearer <token>",
         }
     }
-    openapi_schema["security"] = [{"Bearer": []}]
     openapi_schema["security"] = [{"BearerAuth": []}]
     app.openapi_schema = openapi_schema
     return openapi_schema
@@ -76,7 +77,13 @@ register_exception_handlers(app)
 
 # ── 注册中间件（注意顺序）──────────────────────────────
 # 中间件执行顺序：后添加的先执行（洋葱模型）
-# 1. CORS 中间件（最先执行，处理跨域）
+# 1. 速率限制中间件
+app.add_middleware(RateLimiterMiddleware)
+
+# 2. 请求日志中间件
+app.add_middleware(RequestLogMiddleware)
+
+# 3. CORS 中间件必须最后注册，使限流的 429 响应也带上跨域响应头。
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
@@ -84,13 +91,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-# 2. 速率限制中间件（在 CORS 之后执行）
-app.add_middleware(RateLimiterMiddleware)
-
-# 3. 请求日志中间件
-app.add_middleware(RequestLogMiddleware)
 
 
 # 注册路由
