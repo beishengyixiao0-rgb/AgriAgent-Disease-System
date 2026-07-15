@@ -38,6 +38,7 @@ class RedisClient:
     def _connect(self):
         """初始化 Redis 连接池"""
         self._memory_cache = {}
+        self._memory_expirations = {}
         if not HAS_REDIS:
             self._use_redis = False
             self._client = None
@@ -84,28 +85,52 @@ class RedisClient:
                     self._use_redis = False
                     return func()
 
+    def _memory_set(self, key: str, value: Any, expire: Optional[int] = None) -> bool:
+        self._memory_cache[key] = value
+        if expire is None:
+            self._memory_expirations.pop(key, None)
+        else:
+            self._memory_expirations[key] = time.time() + expire
+        return True
+
+    def _memory_get(self, key: str) -> Optional[Any]:
+        expires_at = self._memory_expirations.get(key)
+        if expires_at is not None and expires_at <= time.time():
+            self._memory_cache.pop(key, None)
+            self._memory_expirations.pop(key, None)
+            return None
+        return self._memory_cache.get(key)
+
+    def _memory_delete(self, key: str) -> Optional[Any]:
+        self._memory_expirations.pop(key, None)
+        return self._memory_cache.pop(key, None)
+
     def set(self, key: str, value: str, expire: Optional[int] = None) -> Any:
         """设置键值"""
         return self._retry_on_fail(
-            lambda: self._client.set(key, value, ex=expire) if self._use_redis else self._memory_cache.setdefault(key, value)
+            lambda: self._client.set(key, value, ex=expire)
+            if self._use_redis
+            else self._memory_set(key, value, expire)
         )
 
     def get(self, key: str) -> Optional[str]:
         """获取键值"""
         return self._retry_on_fail(
-            lambda: self._client.get(key) if self._use_redis else self._memory_cache.get(key)
+            lambda: self._client.get(key) if self._use_redis else self._memory_get(key)
         )
 
     def delete(self, key: str) -> Any:
         """删除键"""
         return self._retry_on_fail(
-            lambda: self._client.delete(key) if self._use_redis else self._memory_cache.pop(key, None)
+            lambda: self._client.delete(key) if self._use_redis else self._memory_delete(key)
         )
 
     def exists(self, key: str) -> bool:
         """检查键是否存在"""
         return self._retry_on_fail(
-            lambda: bool(self._client.exists(key)) if self._use_redis else key in self._memory_cache
+            lambda: bool(self._client.exists(key))
+            if self._use_redis
+            else self._memory_get(key) is not None
         )
 
     def set_json(self, key: str, data: dict, expire: Optional[int] = None) -> Any:
@@ -147,13 +172,22 @@ class RedisClient:
     def flushall(self) -> Any:
         """清空所有数据"""
         return self._retry_on_fail(
-            lambda: self._client.flushall() if self._use_redis else self._memory_cache.clear()
+            lambda: self._client.flushall()
+            if self._use_redis
+            else (self._memory_cache.clear(), self._memory_expirations.clear())
         )
 
     def keys(self, pattern: str = "*") -> list:
         """获取匹配模式的所有键"""
         return self._retry_on_fail(
-            lambda: self._client.keys(pattern) if self._use_redis else [k for k in self._memory_cache.keys() if pattern == "*" or k.startswith(pattern.replace("*", ""))]
+            lambda: self._client.keys(pattern)
+            if self._use_redis
+            else [
+                key
+                for key in list(self._memory_cache)
+                if self._memory_get(key) is not None
+                and (pattern == "*" or key.startswith(pattern.replace("*", "")))
+            ]
         )
 
     def get_all_data(self) -> dict:
