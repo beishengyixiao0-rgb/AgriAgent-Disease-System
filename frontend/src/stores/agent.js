@@ -3,6 +3,7 @@
  * 管理对话会话列表、当前会话消息等
  */
 import { defineStore } from 'pinia'
+import request from '@/utils/request'
 
 export const useAgentStore = defineStore('agent', {
   state: () => ({
@@ -94,6 +95,75 @@ export const useAgentStore = defineStore('agent', {
       this.sessions = []
       this.pendingPrompt = null
       this.abort()
+    },
+
+    /** 从后端加载当前用户的会话列表 */
+    async loadSessions() {
+      try {
+        const response = await request.get('/chat/sessions')
+        this.sessions = Array.isArray(response?.data) ? response.data : []
+      } catch (error) {
+        console.error('加载会话列表失败:', error)
+        this.sessions = []
+      }
+    },
+
+    /** 加载历史消息，并把持久化的工具结果恢复成检测卡片数据 */
+    async loadSessionMessages(sessionId) {
+      try {
+        const response = await request.get(`/chat/sessions/${sessionId}/messages`)
+        const history = Array.isArray(response?.data) ? response.data : []
+
+        this.messages = history.map((msg) => {
+          let detectionResult = msg.tool_result || null
+          if (typeof detectionResult === 'string') {
+            try {
+              detectionResult = JSON.parse(detectionResult)
+            } catch {
+              detectionResult = null
+            }
+          }
+
+          return {
+            id: msg.id,
+            role: msg.role,
+            content: msg.content,
+            type: detectionResult ? 'agent-analysis' : undefined,
+            detectionResult,
+            agent_used: msg.agent_used,
+            tool_calls: msg.tool_calls,
+            tool_result: msg.tool_result,
+            createdAt: msg.created_at,
+          }
+        })
+        this.currentSessionId = sessionId
+      } catch (error) {
+        console.error('加载会话消息失败:', error)
+        this.messages = []
+        this.currentSessionId = null
+      }
+    },
+
+    async deleteSession(sessionId) {
+      try {
+        const response = await request.delete(`/chat/sessions/${sessionId}`)
+        if (response?.code === 200) {
+          this.sessions = this.sessions.filter((session) => session.id !== sessionId)
+          if (this.currentSessionId === sessionId) this.newChat()
+        }
+      } catch (error) {
+        console.error('删除会话失败:', error)
+      }
+    },
+
+    updateSessionList(session) {
+      const index = this.sessions.findIndex((item) => item.id === session.id)
+      if (index >= 0) this.sessions[index] = session
+      else this.sessions.unshift(session)
+
+      this.sessions.sort(
+        (a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0),
+      )
     },
   },
 })

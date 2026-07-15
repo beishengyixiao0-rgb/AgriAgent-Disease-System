@@ -2,7 +2,9 @@
   <div class="chat-page">
     <ChatSidebar
       :sessions="sessions"
+      :current-session-id="currentSessionId"
       @new-diagnosis="startNewDiagnosis"
+      @select-session="handleSelectSession"
     />
 
     <main class="main-area">
@@ -65,7 +67,7 @@ import { streamChat } from '@/utils/stream'
 
 const message = ref('')
 const agentStore = useAgentStore()
-const { messages } = storeToRefs(agentStore)
+const { messages, sessions, currentSessionId } = storeToRefs(agentStore)
 
 const uploadQueue = ref([])
 const hasReadyCameraAttachment = computed(() => uploadQueue.value.some((item) => (
@@ -720,10 +722,14 @@ const sendMessage = async () => {
 
   agentStore.abort()
 
-  // /api/chat/upload 返回服务器临时路径；Agent SSE 接口只接收一个 image_path。
-  const imagePath = attachments[0]?.uploadResult?.image_path
-    || attachments[0]?.uploadResult?.data?.image_path
-    || null
+  // /api/chat/upload 返回服务器临时路径；单附件和多附件分别传给对应字段。
+  const attachmentPaths = attachments.map((item) => (
+    item.uploadResult?.image_path
+    || item.uploadResult?.data?.image_path
+    || item.uploadUrl
+  )).filter(Boolean)
+  const imagePath = attachmentPaths.length === 1 ? attachmentPaths[0] : null
+  const imagePaths = attachmentPaths.length > 1 ? attachmentPaths : null
 
   const userMessage = {
     role: 'user',
@@ -764,6 +770,7 @@ const sendMessage = async () => {
     {
       message: userMessage.content,
       image_path: imagePath,
+      image_paths: imagePaths,
       session_id: agentStore.currentSessionId,
     },
     {
@@ -799,7 +806,7 @@ const sendMessage = async () => {
 
         scrollToBottom()
       },
-      onDone: () => {
+      onDone: async () => {
         assistantMessage.loading = false
         assistantMessage.modelThinking = false
         agentStore.setLoading(false)
@@ -811,6 +818,7 @@ const sendMessage = async () => {
             : '分析已完成'
         }
 
+        await agentStore.loadSessions()
         scrollToBottom()
       },
       onError: (error) => {
@@ -829,6 +837,7 @@ const sendMessage = async () => {
 }
 
 onMounted(async () => {
+  await agentStore.loadSessions()
   const pendingPrompt = agentStore.consumePendingPrompt()
 
   if (!pendingPrompt) return
@@ -915,11 +924,31 @@ const startNewDiagnosis = () => {
   cameraError.value = ''
 }
 
-const sessions = ref([
-  'Tomato leaf disease',
-  'Grape black rot',
-  'Pepper diagnosis',
-])
+const handleSelectSession = async (sessionId) => {
+  if (sessionId === currentSessionId.value) return
+
+  agentStore.abort()
+  messages.value.forEach((item) => {
+    if (item.imagePreview?.startsWith('blob:')) URL.revokeObjectURL(item.imagePreview)
+    if (item.imageUrl?.startsWith('blob:')) URL.revokeObjectURL(item.imageUrl)
+    if (item.videoUrl?.startsWith('blob:')) URL.revokeObjectURL(item.videoUrl)
+    item.images?.forEach((url) => {
+      if (url.startsWith('blob:')) URL.revokeObjectURL(url)
+    })
+  })
+
+  uploadQueue.value.forEach((item) => {
+    if (item.timer) window.clearInterval(item.timer)
+    if (item.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(item.previewUrl)
+  })
+  uploadQueue.value = []
+  message.value = ''
+  showUploadMenu.value = false
+  closeCameraModal()
+
+  await agentStore.loadSessionMessages(sessionId)
+  await scrollToBottom()
+}
 </script>
 
 <style scoped>
