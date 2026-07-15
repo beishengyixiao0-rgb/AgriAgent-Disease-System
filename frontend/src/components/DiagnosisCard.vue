@@ -68,18 +68,35 @@
         <el-tag type="success">目标：{{ totalObjects }}</el-tag>
       </div>
 
-      <div v-if="annotatedVideoUrl" class="video-player">
+      <div v-if="annotatedVideoUrl && !videoPlaybackFailed" class="video-player">
         <video
           :src="annotatedVideoUrl"
           controls
           playsinline
           preload="metadata"
+          @error="handleVideoPlaybackError"
         />
       </div>
 
-      <div v-else-if="thumbnailFrames.length" class="frames-fallback">
+      <div v-if="videoPlaybackFailed" class="video-playback-warning">
+        <strong>浏览器无法播放标注视频</strong>
+        <span>{{ videoPlaybackError }}</span>
+        <a
+          v-if="annotatedVideoUrl"
+          :href="annotatedVideoUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          在新窗口打开视频
+        </a>
+      </div>
+
+      <div
+        v-if="(!annotatedVideoUrl || videoPlaybackFailed) && thumbnailFrames.length"
+        class="frames-fallback"
+      >
         <p class="fallback-hint">
-          标注视频生成中或上传失败，以下为关键帧预览：
+          {{ videoPlaybackFailed ? '视频播放失败，已切换为关键帧预览：' : '标注视频生成中或上传失败，以下为关键帧预览：' }}
         </p>
 
         <div class="frames-container">
@@ -103,7 +120,10 @@
         </div>
       </div>
 
-      <div v-else class="video-output-missing">
+      <div
+        v-if="!annotatedVideoUrl && !thumbnailFrames.length"
+        class="video-output-missing"
+      >
         检测任务已经完成，但后端暂未返回标注视频或可预览的关键帧。
       </div>
 
@@ -353,6 +373,8 @@ const videoFrames = computed(() => (
 ))
 const previewFrameUrl = ref('')
 const previewImageTitle = ref('')
+const videoPlaybackFailed = ref(false)
+const videoPlaybackError = ref('视频地址不可访问，或视频编码不受当前浏览器支持。')
 
 const getBaseName = (path = '') => String(path).split(/[\\/]/).pop() || ''
 
@@ -419,6 +441,20 @@ const videoResolution = computed(() => {
   if (!resolution || resolution.width == null || resolution.height == null) return ''
   return `${resolution.width} × ${resolution.height}`
 })
+
+const handleVideoPlaybackError = (event) => {
+  const mediaError = event?.target?.error
+  const errorMessages = {
+    1: '视频加载被中止。',
+    2: '读取视频时发生网络错误，请检查 MinIO 地址。',
+    3: '视频文件无法解码，后端需要输出 H.264 编码。',
+    4: '当前浏览器不支持该视频格式或编码。',
+  }
+
+  videoPlaybackError.value = errorMessages[mediaError?.code]
+    || '视频地址不可访问，或视频编码不受当前浏览器支持。'
+  videoPlaybackFailed.value = true
+}
 
 const previewVideoFrame = (frame) => {
   previewFrameUrl.value = getVideoFrameImage(frame)
@@ -789,6 +825,31 @@ const formatBoundingBox = (bbox) => (
   color: #92400e;
   font-size: 13px;
   line-height: 1.6;
+}
+
+.video-playback-warning {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border: 1px solid #fed7aa;
+  border-radius: 10px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.video-playback-warning a {
+  color: #15803d;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.video-playback-warning a:hover {
+  text-decoration: underline;
 }
 
 .frames-container {

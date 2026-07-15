@@ -25,9 +25,11 @@
           <div v-if="showUserMenu" class="user-dropdown">
             <div class="dropdown-header">
               <div class="avatar large">{{ userInitial }}</div>
-              <div>
+              <div class="dropdown-identity">
                 <div class="dropdown-name">{{ userStore.username || 'User' }}</div>
-                <div class="dropdown-role">{{ roleLabel }}</div>
+                <div class="dropdown-role" :class="{ admin: userStore.isAdmin }">
+                  {{ roleLabel }}
+                </div>
               </div>
             </div>
 
@@ -40,9 +42,38 @@
                 <span>角色</span>
                 <strong>{{ roleLabel }}</strong>
               </div>
+              <div class="info-row">
+                <span>账号状态</span>
+                <strong :class="userStore.user?.is_active === false ? 'status-disabled' : 'status-active'">
+                  {{ userStore.user?.is_active === false ? '已停用' : '正常' }}
+                </strong>
+              </div>
+              <div class="info-row">
+                <span>手机号</span>
+                <strong>{{ userStore.user?.phone || '—' }}</strong>
+              </div>
+              <div class="info-row">
+                <span>最近登录</span>
+                <strong>{{ formatDate(userStore.user?.last_login_at) }}</strong>
+              </div>
             </div>
 
-            <button class="logout-btn" @click="handleLogout">Logout</button>
+            <div v-if="userStore.user?.detection_stats" class="profile-stats">
+              <div>
+                <strong>{{ userStore.user.detection_stats.total_tasks ?? 0 }}</strong>
+                <span>检测任务</span>
+              </div>
+              <div>
+                <strong>{{ userStore.user.detection_stats.total_objects ?? 0 }}</strong>
+                <span>检测目标</span>
+              </div>
+            </div>
+
+            <div class="permission-note" :class="{ admin: userStore.isAdmin }">
+              {{ userStore.isAdmin ? '管理员权限已启用' : '可使用检测与智能对话功能' }}
+            </div>
+
+            <button class="logout-btn" @click="handleLogout">退出登录</button>
           </div>
         </div>
       </div>
@@ -50,7 +81,7 @@
 
     <main class="home-content">
       <section class="hero">
-        <div class="badge">YOLOv11 + Conversational AI</div>
+        <WeatherBadge />
 
         <h1>Agri<span>Agent</span></h1>
         <h2>今天想分析什么农业问题？</h2>
@@ -59,8 +90,55 @@
           AgriAgent 将自动完成病害诊断、知识检索与数据分析。
         </p>
 
+        <div class="home-prompt-area">
+          <input
+            ref="homeFileInputRef"
+            type="file"
+            :accept="homeFileAccept"
+            :multiple="homeFileMultiple"
+            class="home-file-input"
+            @change="handleHomeFileSelection"
+          />
+
+          <div v-if="showAttachmentMenu" class="home-attachment-menu">
+            <div class="attachment-menu-title">添加附件与检测方式</div>
+            <button type="button" class="attachment-option primary" @click="selectAttachmentMode('agent-image')">
+              <span class="option-icon"><Picture /></span>
+              <span class="option-copy"><strong>添加图片到 Agent 对话</strong><small>结合图片与文字问题进行智能分析</small></span>
+            </button>
+            <button type="button" class="attachment-option" @click="selectAttachmentMode('image')">
+              <span class="option-icon"><Lightning /></span>
+              <span class="option-copy"><strong>快捷单图检测</strong><small>跳过大模型，直接获得确定性检测结果</small></span>
+            </button>
+            <button type="button" class="attachment-option" @click="selectAttachmentMode('batch')">
+              <span class="option-icon"><Files /></span>
+              <span class="option-copy"><strong>快捷批量检测</strong><small>上传多张图片或 ZIP 压缩包</small></span>
+            </button>
+            <button type="button" class="attachment-option" @click="selectAttachmentMode('video')">
+              <span class="option-icon"><VideoCamera /></span>
+              <span class="option-copy"><strong>视频检测</strong><small>上传作物视频并查看标注结果</small></span>
+            </button>
+            <button type="button" class="attachment-option" @click="selectAttachmentMode('realtime-camera')">
+              <span class="option-icon"><Monitor /></span>
+              <span class="option-copy"><strong>实时摄像头检测</strong><small>连接摄像头持续识别病害目标</small></span>
+            </button>
+            <button type="button" class="attachment-option" @click="selectAttachmentMode('camera')">
+              <span class="option-icon"><Camera /></span>
+              <span class="option-copy"><strong>相机拍摄</strong><small>拍照上传后，可补充文字再发送</small></span>
+            </button>
+          </div>
+
         <form class="prompt-box" @submit.prevent="startConversation">
-          <div class="prompt-icon">🌿</div>
+          <button
+            type="button"
+            class="prompt-add"
+            :class="{ active: showAttachmentMenu }"
+            :aria-expanded="showAttachmentMenu"
+            aria-label="添加附件或选择检测方式"
+            @click="showAttachmentMenu = !showAttachmentMenu"
+          >
+            <Plus />
+          </button>
           <textarea
             v-model="prompt"
             rows="1"
@@ -73,7 +151,9 @@
           </button>
         </form>
 
-        <p class="prompt-hint">Press Enter to start a conversation · Add images after entering AI Agent</p>
+        </div>
+
+        <p class="prompt-hint">按 Enter 开始对话 · 点击 + 添加图片、视频或选择检测方式</p>
 
         <div class="suggestion-list" aria-label="Suggested questions">
           <button
@@ -134,18 +214,25 @@
 <script setup>
 import { useAgentStore } from '@/stores/agent'
 import { useUserStore } from '@/stores/user'
+import WeatherBadge from '@/components/WeatherBadge.vue'
+import { Camera, Files, Lightning, Monitor, Picture, Plus, VideoCamera } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { computed, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
 const userStore = useUserStore()
 const agentStore = useAgentStore()
 
-const roleLabel = computed(() => (userStore.isSuperuser ? 'Administrator' : 'User'))
+const roleLabel = computed(() => (userStore.isAdmin ? '系统管理员' : '普通用户'))
 const userInitial = computed(() => (userStore.username || 'U').charAt(0).toUpperCase())
 const showUserMenu = ref(false)
 const prompt = ref('')
+const showAttachmentMenu = ref(false)
+const homeFileInputRef = ref(null)
+const homeFileMode = ref('agent-image')
+const homeFileAccept = ref('image/*')
+const homeFileMultiple = ref(false)
 
 const suggestions = [
   '帮我分析一张叶片图片',
@@ -166,6 +253,41 @@ const startConversation = (suggestion = '') => {
   router.push('/ai-chat')
 }
 
+const routeHomeAction = (mode, files = []) => {
+  const defaultPrompt = mode === 'agent-image' ? '请帮我分析这张图片' : ''
+  agentStore.queueHomePrompt(prompt.value.trim() || defaultPrompt, { mode, files })
+  prompt.value = ''
+  showAttachmentMenu.value = false
+  router.push('/ai-chat')
+}
+
+const selectAttachmentMode = async (mode) => {
+  showAttachmentMenu.value = false
+
+  if (mode === 'realtime-camera' || mode === 'camera') {
+    routeHomeAction(mode)
+    return
+  }
+
+  homeFileMode.value = mode
+  homeFileMultiple.value = mode === 'batch'
+  homeFileAccept.value = mode === 'video'
+    ? '.mp4,.avi,.mov,.mkv,.wmv,.flv,video/*'
+    : mode === 'batch'
+      ? 'image/*,.zip'
+      : 'image/*'
+
+  await nextTick()
+  homeFileInputRef.value?.click()
+}
+
+const handleHomeFileSelection = (event) => {
+  const files = Array.from(event.target.files || [])
+  event.target.value = ''
+  if (!files.length) return
+  routeHomeAction(homeFileMode.value, files)
+}
+
 const toggleUserMenu = () => {
   showUserMenu.value = !showUserMenu.value
 }
@@ -176,6 +298,26 @@ const handleLogout = () => {
   ElMessage.success('已退出登录')
   router.push('/login')
 }
+
+const formatDate = (value) => {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return date.toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+onMounted(async () => {
+  try {
+    await userStore.fetchUserProfile()
+  } catch (error) {
+    console.warn('[用户资料刷新失败]', error)
+  }
+})
 </script>
 
 <style scoped>
@@ -264,7 +406,7 @@ const handleLogout = () => {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  width: 260px;
+  width: 300px;
   background: white;
   border: 1px solid #e5e7eb;
   border-radius: 16px;
@@ -285,9 +427,19 @@ const handleLogout = () => {
   font-weight: 700;
 }
 
+.dropdown-identity {
+  min-width: 0;
+  flex: 1;
+}
+
 .dropdown-role {
   color: #6b7280;
   font-size: 13px;
+}
+
+.dropdown-role.admin {
+  color: #b45309;
+  font-weight: 700;
 }
 
 .dropdown-body {
@@ -304,8 +456,66 @@ const handleLogout = () => {
   font-size: 13px;
 }
 
+.info-row strong {
+  max-width: 180px;
+  color: #374151;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
 .info-row span {
   color: #6b7280;
+}
+
+.status-active {
+  color: #15803d !important;
+}
+
+.status-disabled {
+  color: #dc2626 !important;
+}
+
+.profile-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.profile-stats > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 8px;
+  border-radius: 11px;
+  background: #f0fdf4;
+}
+
+.profile-stats strong {
+  color: #166534;
+  font-size: 17px;
+}
+
+.profile-stats span {
+  color: #6b7280;
+  font-size: 11px;
+}
+
+.permission-note {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: #f3f4f6;
+  color: #4b5563;
+  font-size: 12px;
+  text-align: center;
+}
+
+.permission-note.admin {
+  background: #fffbeb;
+  color: #b45309;
+  font-weight: 700;
 }
 
 .logout-btn {
@@ -325,15 +535,6 @@ const handleLogout = () => {
   justify-content: center;
   text-align: center;
   padding: 40px 20px;
-}
-
-.badge {
-  background: #ecfdf5;
-  color: #15803d;
-  border-radius: 999px;
-  padding: 8px 16px;
-  font-size: 12px;
-  font-weight: 600;
 }
 
 h1 {
@@ -451,6 +652,145 @@ footer {
   background: white;
   box-shadow: 0 18px 45px rgba(22, 101, 52, 0.1);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.home-prompt-area {
+  position: relative;
+  width: min(780px, 100%);
+}
+
+.home-file-input {
+  display: none;
+}
+
+.prompt-box {
+  width: 100%;
+}
+
+.prompt-add {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: #f3f4f6;
+  color: #374151;
+  cursor: pointer;
+  font-size: 20px;
+  font-weight: 300;
+  line-height: 1;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.prompt-add :deep(svg) {
+  width: 18px;
+  height: 18px;
+}
+
+.prompt-add:hover,
+.prompt-add.active {
+  background: #dcfce7;
+  color: #15803d;
+  transform: rotate(90deg);
+}
+
+.home-attachment-menu {
+  position: absolute;
+  right: auto;
+  bottom: calc(100% + 12px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: min(380px, calc(100vw - 32px));
+  max-height: min(330px, 52vh);
+  padding: 10px;
+  overflow-y: auto;
+  border: 1px solid #d9dedb;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 18px 48px rgba(17, 24, 39, 0.14);
+  text-align: left;
+  backdrop-filter: blur(18px);
+}
+
+.home-attachment-menu::-webkit-scrollbar {
+  width: 6px;
+}
+
+.home-attachment-menu::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #d1d5db;
+}
+
+.attachment-menu-title {
+  padding: 8px 12px 6px;
+  color: #9ca3af;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.attachment-option {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  padding: 11px 13px;
+  border: 0;
+  border-radius: 15px;
+  background: transparent;
+  color: #1f2937;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.18s ease, transform 0.18s ease;
+}
+
+.attachment-option.primary {
+  background: #f0fdf4;
+}
+
+.attachment-option:hover {
+  background: #f3f6f4;
+  transform: translateX(2px);
+}
+
+.option-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 11px;
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.option-icon :deep(svg) {
+  width: 19px;
+  height: 19px;
+}
+
+.option-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.option-copy strong {
+  color: #1f2937;
+  font-size: 14px;
+}
+
+.option-copy small {
+  color: #8b938e;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .prompt-box:focus-within {
@@ -615,10 +955,6 @@ footer {
 
   .prompt-box {
     border-radius: 18px;
-  }
-
-  .prompt-icon {
-    display: none;
   }
 
   .prompt-hint {

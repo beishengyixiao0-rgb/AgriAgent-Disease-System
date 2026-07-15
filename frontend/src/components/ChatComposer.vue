@@ -35,7 +35,10 @@
             </div>
             <div class="upload-status">
               <span v-if="item.status === 'uploading'">正在上传… {{ item.progress }}%</span>
-              <span v-else-if="item.status === 'success' && item.mode === 'agent-image'" class="success-text">上传成功，可输入内容后发送 ✓</span>
+              <span
+                v-else-if="item.status === 'success' && (item.mode === 'agent-image' || item.mode === 'camera')"
+                class="success-text"
+              >上传成功，可输入内容后发送 ✓</span>
               <span v-else-if="item.status === 'success'" class="success-text">上传完成 ✓</span>
               <span v-else class="error-text">{{ item.errorMessage || '上传失败' }}</span>
             </div>
@@ -73,7 +76,7 @@
       </button>
       <button class="upload-option" @click="$emit('select-upload-mode', 'camera')">
         <span class="option-icon"><Camera /></span>
-        <span class="option-copy"><strong>相机拍摄</strong><small>拍摄一张现场照片并上传</small></span>
+        <span class="option-copy"><strong>相机拍摄</strong><small>拍照上传后，可补充文字再发送</small></span>
       </button>
     </div>
 
@@ -191,6 +194,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  allowEmptySubmit: {
+    type: Boolean,
+    default: false,
+  },
 })
 
 const emit = defineEmits([
@@ -217,7 +224,12 @@ const speechSupported = ref(false)
 let speechRecognition = null
 let speechBaseText = ''
 
-const canSend = computed(() => Boolean(props.modelValue.trim() || props.uploadQueue.length))
+const canSend = computed(() => {
+  const hasContent = Boolean(props.modelValue.trim())
+  if (!props.uploadQueue.length) return hasContent
+  const uploadsFinished = props.uploadQueue.every((item) => item.status === 'success')
+  return uploadsFinished && (hasContent || props.allowEmptySubmit)
+})
 const voiceButtonTitle = computed(() => {
   if (!speechSupported.value) return '当前浏览器不支持语音输入'
   return isListening.value ? '停止语音输入' : '开始中文语音输入'
@@ -664,10 +676,20 @@ defineExpose({ openFilePicker })
 
 /* 新版浮动输入区：参考主流对话产品，并保持农业系统绿色主题。 */
 .chat-footer {
-  position: relative;
-  padding: 12px 24px 16px;
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 20;
+  padding: 42px 24px 16px;
   border-top: 0;
-  background: linear-gradient(to top, #fff 72%, rgba(255, 255, 255, 0.92));
+  background: linear-gradient(
+    to top,
+    #fafafa 0,
+    rgba(250, 250, 250, 0.96) 64%,
+    rgba(250, 250, 250, 0) 100%
+  );
+  pointer-events: none;
 }
 
 .composer-stack {
@@ -675,6 +697,7 @@ defineExpose({ openFilePicker })
   width: 100%;
   max-width: 900px;
   margin: 0 auto;
+  pointer-events: auto;
 }
 
 .upload-panel {
@@ -993,7 +1016,7 @@ defineExpose({ openFilePicker })
 
 @media (max-width: 640px) {
   .chat-footer {
-    padding: 9px 10px 12px;
+    padding: 30px 10px 12px;
   }
 
   .input-wrapper {

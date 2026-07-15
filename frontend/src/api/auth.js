@@ -26,3 +26,10 @@ export function loginApi(data) {
 export function getUserInfoApi() {
     return request.get('/auth/me')
 }
+
+/**
+ * 获取当前用户完整资料（包含角色、账号状态和检测统计）
+ */
+export function getUserProfileApi() {
+    return request.get('/auth/profile')
+}

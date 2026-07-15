@@ -151,7 +151,7 @@ defineExpose({ scrollToBottom })
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 40px;
+  padding: 40px 40px 170px;
 }
 
 .welcome-panel {
@@ -332,5 +332,11 @@ defineExpose({ scrollToBottom })
 .batch-grid .chat-image {
   height: 110px;
   object-fit: cover;
+}
+
+@media (max-width: 640px) {
+  .messages {
+    padding: 24px 14px 140px;
+  }
 }
 </style>

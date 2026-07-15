@@ -3,7 +3,7 @@
  * 管理用户登录信息、Token、角色等
  */
 import { defineStore } from 'pinia'
-import { loginApi, getUserInfoApi } from '@/api/auth'
+import { getUserInfoApi, getUserProfileApi, loginApi } from '@/api/auth'
 
 const TOKEN_KEY = 'rsod_token'
 const USER_KEY = 'rsod_user'
@@ -30,7 +30,14 @@ export const useUserStore = defineStore('user', {
     roles: (state) => state.user?.roles || [],
 
     /** 是否为管理员 */
-    isSuperuser: (state) => state.user?.is_superuser || false,
+    isAdmin: (state) => (
+      Array.isArray(state.user?.roles) && state.user.roles.includes('admin')
+    ) || Boolean(state.user?.is_superuser),
+
+    /** 兼容旧组件命名，业务权限仍以 admin 角色为准 */
+    isSuperuser: (state) => (
+      Array.isArray(state.user?.roles) && state.user.roles.includes('admin')
+    ) || Boolean(state.user?.is_superuser),
   },
 
   actions: {
@@ -63,6 +70,17 @@ export const useUserStore = defineStore('user', {
       } catch {
         this.logout()
       }
+    },
+
+    /** 获取包含检测统计的完整个人资料 */
+    async fetchUserProfile() {
+      const profile = await getUserProfileApi()
+      this.user = {
+        ...(this.user || {}),
+        ...profile,
+      }
+      localStorage.setItem(USER_KEY, JSON.stringify(this.user))
+      return profile
     },
 
     /**

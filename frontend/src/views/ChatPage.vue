@@ -28,6 +28,7 @@
         :inputMultiple="inputMultiple"
         :inputCapture="inputCapture"
         :cameraError="cameraError"
+        :allowEmptySubmit="hasReadyCameraAttachment"
         @toggle-upload-menu="toggleUploadMenu"
         @select-upload-mode="handleUploadModeSelection"
         @remove-upload-item="removeUploadItem"
@@ -54,7 +55,7 @@ import {
 } from '@/api/detection'
 import { ElMessage } from 'element-plus'
 import { storeToRefs } from 'pinia'
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 
 import ChatComposer from '@/components/ChatComposer.vue'
 import ChatMessageList from '@/components/ChatMessageList.vue'
@@ -67,6 +68,9 @@ const agentStore = useAgentStore()
 const { messages } = storeToRefs(agentStore)
 
 const uploadQueue = ref([])
+const hasReadyCameraAttachment = computed(() => uploadQueue.value.some((item) => (
+  item.mode === 'camera' && item.status === 'success'
+)))
 const uploadMode = ref('image')
 const inputAccept = ref('image/*')
 const inputMultiple = ref(false)
@@ -118,7 +122,9 @@ const closeCameraModal = () => {
 const handleCameraError = (error) => {
   cameraError.value = error
   showCameraModal.value = false
-  setUploadMode('image')
+  // 相机不可用时改选本地照片，但仍沿用“有提示词走 Agent、无提示词走 YOLO”的分流。
+  setUploadMode('camera')
+  inputCapture.value = null
 
   nextTick(() => {
     chatComposerRef.value?.openFilePicker()
@@ -201,8 +207,9 @@ const handleRealtimeFinished = ({ result }) => {
 }
 
 const handleCameraCapture = (file) => {
-  createUploadItem(file)
   closeCameraModal()
+  setUploadMode('camera')
+  createUploadItem(file)
 }
 
 const removeUploadItem = (id) => {
@@ -247,8 +254,8 @@ const uploadAttachment = async (item) => {
     item.uploadResult = result
     item.uploadUrl = getUploadedFileUrl(result)
 
-    // Agent 附件留在输入区；其他原有通道继续完成后的处理。
-    if (item.mode !== 'agent-image') {
+    // Agent 图片和手动拍照需要停留在输入区，等待用户输入文字并点击发送。
+    if (!['agent-image', 'camera'].includes(item.mode)) {
       completeUpload(item, item.file)
     }
   } catch (error) {
@@ -266,7 +273,8 @@ const createUploadItem = (file) => {
   const isVideo = file.type.startsWith('video/')
   const previewUrl = URL.createObjectURL(file)
 
-  const item = {
+  // 上传回调会持续修改这个对象，使用 reactive 才能立即刷新进度与成功状态。
+  const item = reactive({
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     name: file.name,
     type: isVideo ? 'video' : 'image',
@@ -287,16 +295,22 @@ const createUploadItem = (file) => {
     uploadResult: null,
     uploadUrl: '',
     errorMessage: '',
-  }
+  })
 
   uploadQueue.value.unshift(item)
-  uploadAttachment(item)
+  item.uploadPromise = uploadAttachment(item)
+  return item
 }
 
 const handleFileSelection = (files) => {
   const normalizedFiles = Array.from(files || [])
 
   if (!normalizedFiles.length) return
+
+  if (uploadMode.value === 'camera') {
+    handleCameraCapture(normalizedFiles[0])
+    return
+  }
 
   const selectedFiles = uploadMode.value === 'batch'
     ? normalizedFiles
@@ -309,7 +323,7 @@ const handleFileSelection = (files) => {
  * 快捷检测：选择文件后直接调用检测 API，不经过 LLM 对话。
  * 由页面底部输入栏的上传菜单触发。
  */
-async function handleQuickDetect(type) {
+async function handleQuickDetect(type, selectedFiles = null) {
   const input = document.createElement('input')
   input.type = 'file'
   input.accept = type === 'batch' ? 'image/*,.zip' : 'image/*'
@@ -439,6 +453,11 @@ async function handleQuickDetect(type) {
     scrollToBottom()
   }
 
+  if (selectedFiles?.length) {
+    await input.onchange({ target: { files: selectedFiles } })
+    return
+  }
+
   input.click()
 }
 
@@ -533,7 +552,7 @@ async function pollVideoProgress(taskId, loadingMessage) {
   }
 }
 
-async function handleVideoDetect() {
+async function handleVideoDetect(selectedFile = null) {
   const input = document.createElement("input");
 
   input.type = "file";
@@ -626,6 +645,11 @@ async function handleVideoDetect() {
     }
   };
 
+  if (selectedFile) {
+    await input.onchange({ target: { files: [selectedFile] } });
+    return;
+  }
+
   input.click();
 }
 
@@ -673,10 +697,26 @@ const completeUpload = (item, file) => {
 
 const sendMessage = async () => {
   const content = message.value.trim()
-  const attachments = uploadQueue.value.filter((item) => item.mode === 'agent-image')
+  const attachments = uploadQueue.value.filter((item) => (
+    item.mode === 'agent-image' || item.mode === 'camera'
+  ))
 
   if (!content && !attachments.length) return
   if (attachments.some((item) => item.status !== 'success')) return
+
+  // 手动拍照且没有额外提示词：发送时改走快捷 YOLO，不经过 Agent/LLM。
+  if (!content && attachments.length === 1 && attachments[0].mode === 'camera') {
+    const cameraAttachment = attachments[0]
+    const cameraFile = cameraAttachment.file
+
+    uploadQueue.value = uploadQueue.value.filter((item) => item.id !== cameraAttachment.id)
+    if (cameraAttachment.previewUrl?.startsWith('blob:')) {
+      URL.revokeObjectURL(cameraAttachment.previewUrl)
+    }
+
+    await handleQuickDetect('single', [cameraFile])
+    return
+  }
 
   agentStore.abort()
 
@@ -715,7 +755,9 @@ const sendMessage = async () => {
 
   message.value = ''
   // 从输入区移除，但不释放 blob URL，因为它已用于消息预览。
-  uploadQueue.value = uploadQueue.value.filter((item) => item.mode !== 'agent-image')
+  uploadQueue.value = uploadQueue.value.filter((item) => (
+    item.mode !== 'agent-image' && item.mode !== 'camera'
+  ))
 
   const stop = streamChat(
     '/api/chat/stream',
@@ -789,7 +831,50 @@ const sendMessage = async () => {
 onMounted(async () => {
   const pendingPrompt = agentStore.consumePendingPrompt()
 
-  if (!pendingPrompt?.content) return
+  if (!pendingPrompt) return
+
+  const pendingFiles = Array.from(pendingPrompt.files || [])
+
+  if (pendingPrompt.mode === 'agent-image' && pendingFiles.length) {
+    setUploadMode('agent-image')
+    const pendingItems = pendingFiles.slice(0, 1).map((file) => createUploadItem(file))
+    message.value = pendingPrompt.content || '请帮我分析这张图片'
+    await Promise.all(pendingItems.map((item) => item.uploadPromise))
+
+    if (pendingItems.every((item) => item.status === 'success')) {
+      await sendMessage()
+    }
+    return
+  }
+
+  if (pendingPrompt.mode === 'image' && pendingFiles.length) {
+    await handleQuickDetect('single', pendingFiles)
+    return
+  }
+
+  if (pendingPrompt.mode === 'batch' && pendingFiles.length) {
+    await handleQuickDetect('batch', pendingFiles)
+    return
+  }
+
+  if (pendingPrompt.mode === 'video' && pendingFiles.length) {
+    await handleVideoDetect(pendingFiles[0])
+    return
+  }
+
+  if (pendingPrompt.mode === 'camera') {
+    message.value = pendingPrompt.content || ''
+    await nextTick()
+    handleUploadModeSelection('camera')
+    return
+  }
+
+  if (pendingPrompt.mode === 'realtime-camera') {
+    handleUploadModeSelection('realtime-camera')
+    return
+  }
+
+  if (!pendingPrompt.content) return
 
   message.value = pendingPrompt.content
   await nextTick()
@@ -845,9 +930,12 @@ const sessions = ref([
 }
 
 .main-area {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .topbar {

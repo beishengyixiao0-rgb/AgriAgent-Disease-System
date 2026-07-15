@@ -40,10 +40,12 @@ export const useAgentStore = defineStore('agent', {
     },
 
     /** 从首页开启一段新对话，并暂存首条自然语言消息 */
-    queueHomePrompt(content) {
+    queueHomePrompt(content, options = {}) {
       this.newChat()
       this.pendingPrompt = {
         content,
+        mode: options.mode || null,
+        files: Array.from(options.files || []),
         createdAt: Date.now(),
       }
     },
