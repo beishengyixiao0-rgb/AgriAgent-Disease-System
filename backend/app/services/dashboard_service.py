@@ -15,11 +15,10 @@
 
 from datetime import datetime, timedelta
 
-from sqlalchemy import cast, Date, func
-
 from app.core.logger import get_logger
 from app.database.session import SessionLocal
 from app.entity.db_models import DetectionResult, DetectionScene, DetectionTask
+from sqlalchemy import Date, cast, func
 
 logger = get_logger(__name__)
 
@@ -55,9 +54,9 @@ class DashboardService:
                     func.coalesce(func.sum(DetectionTask.total_objects), 0).label(
                         "total_objects"
                     ),
-                    func.coalesce(func.avg(DetectionTask.total_inference_time), 0).label(
-                        "avg_inference_time"
-                    ),
+                    func.coalesce(
+                        func.avg(DetectionTask.total_inference_time), 0
+                    ).label("avg_inference_time"),
                 )
                 .filter(
                     DetectionTask.user_id == user_id,
@@ -76,9 +75,9 @@ class DashboardService:
                     func.coalesce(func.sum(DetectionTask.total_objects), 0).label(
                         "total_objects"
                     ),
-                    func.coalesce(func.avg(DetectionTask.total_inference_time), 0).label(
-                        "avg_inference_time"
-                    ),
+                    func.coalesce(
+                        func.avg(DetectionTask.total_inference_time), 0
+                    ).label("avg_inference_time"),
                 )
                 .filter(
                     DetectionTask.user_id == user_id,
@@ -100,7 +99,9 @@ class DashboardService:
                 "total_objects": int(current_stats.total_objects),
                 "avg_inference_time": round(float(current_stats.avg_inference_time), 2),
                 "growth": {
-                    "tasks": calc_growth(current_stats.total_tasks, prev_stats.total_tasks),
+                    "tasks": calc_growth(
+                        current_stats.total_tasks, prev_stats.total_tasks
+                    ),
                     "images": calc_growth(
                         int(current_stats.total_images),
                         int(prev_stats.total_images),

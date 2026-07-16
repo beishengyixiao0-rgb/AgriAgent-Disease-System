@@ -23,11 +23,9 @@ from app.config.settings import settings
 
 
 # ── 日志目录 ──────────────────────────────────────────
-# 日志目录支持通过 settings.LOG_DIR 配置；相对路径相对于 backend 目录。
-_backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-LOG_DIR = settings.LOG_DIR
-if not os.path.isabs(LOG_DIR):
-    LOG_DIR = os.path.join(_backend_dir, LOG_DIR)
+# 日志文件存放在 backend/logs/ 目录下
+LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+"logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 
 

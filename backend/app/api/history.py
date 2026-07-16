@@ -11,12 +11,11 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
-from fastapi.responses import JSONResponse
-
 from app.api.auth import get_current_user
 from app.core.logger import get_logger
 from app.services.history_service import history_service
+from fastapi import APIRouter, Depends, Query
+from fastapi.responses import JSONResponse
 
 logger = get_logger(__name__)
 

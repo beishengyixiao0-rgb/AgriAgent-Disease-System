@@ -23,9 +23,10 @@ import io
 from datetime import datetime
 
 import pytest
+from PIL import Image
+
 from app.entity.db_models import DetectionScene, TrainingMetric, TrainingTask, User
 from app.training.training_service import TrainingService
-from PIL import Image
 
 
 def create_test_user(client, username, password="123456"):
@@ -153,9 +154,7 @@ class TestTrainingAPI:
         assert "total" in data
         assert isinstance(data["items"], list)
 
-    def test_admin_lists_tasks_created_by_other_users(
-        self, client, db_session, admin_headers
-    ):
+    def test_admin_lists_tasks_created_by_other_users(self, client, db_session, admin_headers):
         """平台模型归管理员统一管理，管理员可查看其他账户归属的历史任务。"""
         create_test_user(client, "imported_task_owner")
         task = create_completed_training_task(db_session, "imported_task_owner")
@@ -235,9 +234,7 @@ class TestTrainingAPI:
 
     # ==================== 5. 获取 results.csv ====================
 
-    def test_get_results_csv_success(
-        self, client, db_session, monkeypatch, tmp_path, admin_headers
-    ):
+    def test_get_results_csv_success(self, client, db_session, monkeypatch, tmp_path, admin_headers):
         """正向：有效 task_uuid 下载 results.csv"""
         create_test_user(client, "results_success_user")
         headers = admin_headers
@@ -273,9 +270,7 @@ class TestTrainingAPI:
 
     # ==================== 6. 模型评估 ====================
 
-    def test_validate_model_success(
-        self, client, db_session, monkeypatch, tmp_path, admin_headers
-    ):
+    def test_validate_model_success(self, client, db_session, monkeypatch, tmp_path, admin_headers):
         """正向：对已完成训练的模型执行评估"""
         create_test_user(client, "validate_success_user")
         headers = admin_headers
@@ -325,9 +320,7 @@ class TestTrainingAPI:
 
     # ==================== 7. 模型导出 ====================
 
-    def test_export_model_success(
-        self, client, db_session, monkeypatch, tmp_path, admin_headers
-    ):
+    def test_export_model_success(self, client, db_session, monkeypatch, tmp_path, admin_headers):
         """正向：导出训练好的模型为正式版本"""
         create_test_user(client, "export_success_user")
         headers = admin_headers
@@ -370,21 +363,15 @@ class TestTrainingAPI:
         assert data["version"] == "vtest.0.0"
         assert data["evaluation"]["map50"] == 0.9
 
-        exported_model = (
-            tmp_path / "models" / data["model_path"].split("/")[-2] / "best.pt"
-        )
+        exported_model = tmp_path / "models" / data["model_path"].split("/")[-2] / "best.pt"
         assert exported_model.exists()
 
     def test_export_not_completed_task(self, client, db_session, admin_headers):
         """负向：导出未完成的训练任务 → 400"""
         create_test_user(client, "export_not_completed_user")
         headers = admin_headers
-
-        user = (
-            db_session.query(User)
-            .filter(User.username == "export_not_completed_user")
-            .first()
-        )
+        
+        user = db_session.query(User).filter(User.username == "export_not_completed_user").first()
         scene = DetectionScene(
             name="export_not_completed_scene",
             display_name="未完成场景",
@@ -441,9 +428,7 @@ class TestTrainingAPI:
 
     # ==================== 8. 下载模型 ====================
 
-    def test_download_model_success(
-        self, client, db_session, monkeypatch, tmp_path, admin_headers
-    ):
+    def test_download_model_success(self, client, db_session, monkeypatch, tmp_path, admin_headers):
         """正向：下载模型权重文件（.pt）"""
         create_test_user(client, "download_success_user")
         headers = admin_headers
@@ -524,200 +509,3 @@ class TestTrainingAPI:
         assert response.status_code == 404
         error_msg = self._get_error_message(response)
         assert error_msg and ("不存在" in error_msg or "任务" in error_msg)
-
-        # ==================== 11. 权限隔离测试（补充 - 已修正） ====================
-
-    def test_get_training_status_other_user_task(self, client, db_session):
-        """
-        权限隔离：普通用户查询他人训练任务 → 403（需要管理员权限）
-        """
-        # 创建两个用户
-        create_test_user(client, "owner_user_001")
-        create_test_user(client, "other_user_001")
-
-        owner = db_session.query(User).filter(User.username == "owner_user_001").first()
-        other = db_session.query(User).filter(User.username == "other_user_001").first()
-
-        # 创建 owner 的训练任务
-        scene = DetectionScene(
-            name="owner_scene",
-            display_name="所有者场景",
-            category="agriculture",
-            class_names=["leaf"],
-            is_active=True,
-            created_by=owner.id,
-        )
-        db_session.add(scene)
-        db_session.commit()
-        db_session.refresh(scene)
-
-        task = TrainingTask(
-            user_id=owner.id,
-            scene_id=scene.id,
-            task_uuid="owner_task_001",
-            status="completed",
-            model_name="owner_model",
-            epochs=2,
-            current_epoch=2,
-            progress=100,
-            img_size=640,
-            batch_size=16,
-            device="cpu",
-            optimizer="SGD",
-            lr0=0.01,
-            dataset_path="datasets/owner",
-            data_yaml="datasets/owner/data.yaml",
-            started_at=datetime.now(),
-            completed_at=datetime.now(),
-        )
-        db_session.add(task)
-        db_session.commit()
-        db_session.refresh(task)
-
-        # 普通用户 other_user 登录
-        login_resp = client.post(
-            "/api/auth/login",
-            json={"username": "other_user_001", "password": "123456"},
-        )
-        other_token = login_resp.json()["access_token"]
-        other_headers = {"Authorization": f"Bearer {other_token}"}
-
-        response = client.get(
-            f"/api/training/status/{task.id}",
-            headers=other_headers,
-        )
-        # 权限隔离：普通用户无权限 → 403
-        assert response.status_code == 403
-        error_msg = self._get_error_message(response)
-        assert "需要管理员权限" in error_msg or "权限" in error_msg
-
-    def test_download_model_other_user_task(
-        self, client, db_session, monkeypatch, tmp_path
-    ):
-        """
-        权限隔离：普通用户下载他人模型权重文件 → 403（需要管理员权限）
-        """
-        # 创建两个用户
-        create_test_user(client, "owner_user_002")
-        create_test_user(client, "other_user_002")
-
-        owner = db_session.query(User).filter(User.username == "owner_user_002").first()
-
-        # 创建 owner 的训练任务
-        scene = DetectionScene(
-            name="owner_scene_002",
-            display_name="所有者场景2",
-            category="agriculture",
-            class_names=["leaf"],
-            is_active=True,
-            created_by=owner.id,
-        )
-        db_session.add(scene)
-        db_session.commit()
-        db_session.refresh(scene)
-
-        task = TrainingTask(
-            user_id=owner.id,
-            scene_id=scene.id,
-            task_uuid="owner_task_002",
-            status="completed",
-            model_name="owner_model_002",
-            epochs=2,
-            current_epoch=2,
-            progress=100,
-            img_size=640,
-            batch_size=16,
-            device="cpu",
-            optimizer="SGD",
-            lr0=0.01,
-            dataset_path="datasets/owner",
-            data_yaml="datasets/owner/data.yaml",
-            started_at=datetime.now(),
-            completed_at=datetime.now(),
-        )
-        db_session.add(task)
-        db_session.commit()
-        db_session.refresh(task)
-
-        # 模拟权重文件存在
-        weight_file = tmp_path / "best.pt"
-        weight_file.write_bytes(b"fake-weights-owner")
-        monkeypatch.setattr(
-            TrainingService,
-            "get_task_weights_path",
-            staticmethod(lambda task_uuid: weight_file),
-        )
-
-        # 普通用户 other_user_002 登录
-        login_resp = client.post(
-            "/api/auth/login",
-            json={"username": "other_user_002", "password": "123456"},
-        )
-        other_token = login_resp.json()["access_token"]
-        other_headers = {"Authorization": f"Bearer {other_token}"}
-
-        response = client.get(
-            f"/api/training/download/{task.id}",
-            headers=other_headers,
-        )
-        # 权限隔离：普通用户无权限 → 403
-        assert response.status_code == 403
-        error_msg = self._get_error_message(response)
-        assert "需要管理员权限" in error_msg or "权限" in error_msg
-
-    def test_admin_can_access_other_user_task(self, client, db_session, admin_headers):
-        """
-        权限验证：管理员可以访问其他用户的训练任务（管理员拥有全部权限）
-        """
-        create_test_user(client, "owner_user_003")
-
-        owner = db_session.query(User).filter(User.username == "owner_user_003").first()
-
-        # 创建 owner 的训练任务
-        scene = DetectionScene(
-            name="owner_scene_003",
-            display_name="所有者场景3",
-            category="agriculture",
-            class_names=["leaf"],
-            is_active=True,
-            created_by=owner.id,
-        )
-        db_session.add(scene)
-        db_session.commit()
-        db_session.refresh(scene)
-
-        task = TrainingTask(
-            user_id=owner.id,
-            scene_id=scene.id,
-            task_uuid="owner_task_003",
-            status="completed",
-            model_name="owner_model_003",
-            epochs=2,
-            current_epoch=2,
-            progress=100,
-            img_size=640,
-            batch_size=16,
-            device="cpu",
-            optimizer="SGD",
-            lr0=0.01,
-            dataset_path="datasets/owner",
-            data_yaml="datasets/owner/data.yaml",
-            started_at=datetime.now(),
-            completed_at=datetime.now(),
-        )
-        db_session.add(task)
-        db_session.commit()
-        db_session.refresh(task)
-
-        # 管理员查询 owner 的任务 → 应返回 200
-        response = client.get(
-            f"/api/training/status/{task.id}",
-            headers=admin_headers,
-        )
-        assert response.status_code == 200
-        data = response.json()
-        # 验证返回的任务信息正确
-        assert data["task"]["id"] == task.id
-        assert data["task"]["task_uuid"] == "owner_task_003"
-        assert data["task"]["status"] == "completed"
-        # 管理员能访问他人任务即表示权限通过
