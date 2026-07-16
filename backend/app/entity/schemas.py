@@ -44,6 +44,7 @@ class UserBrief(BaseModel):
     email: str
     avatar: Optional[str] = None
     roles: list[str] = []
+    language: str = "zh"
 
     model_config = {
         "from_attributes": True,

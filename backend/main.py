@@ -19,7 +19,7 @@ from app.middleware.request_logger import RequestLogMiddleware
 from app.middleware.rate_limiter import RateLimiterMiddleware
 from app.middleware.health_probe import HealthProbeMiddleware
 
-
+# from app.api.knowledge import router as knowledge_router  # 【Day11 新增，RAG模块由组员负责】
 
 def init_minio():
     """初始化 MinIO 存储桶"""
@@ -109,7 +109,7 @@ app.include_router(training_router)
 app.include_router(user_router)
 app.include_router(dashboard_router)
 app.include_router(history_router)
-
+# app.include_router(knowledge_router)   # 【Day11 新增，RAG模块由组员负责】
 
 @app.get("/")
 def root():

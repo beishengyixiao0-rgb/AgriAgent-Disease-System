@@ -128,6 +128,9 @@ async def chat_stream(
     # StreamingResponse 开始执行时，鉴权依赖的数据库 Session 可能已关闭。
     user_id = current_user.id
 
+    # ── 获取用户语言偏好 ──
+    language = current_user.language if hasattr(current_user, "language") else "zh"
+
     # ── SSE 流式响应 ──
     async def event_generator():
         try:
@@ -135,9 +138,9 @@ async def chat_stream(
             async for event in detection_agent.chat_stream(
                 message=message,
                 image_path=image_path,
-                image_paths=image_paths,
                 user_id=user_id,
-                scene_id=body.get("scene_id"),
+                session_id=str(session_id) if session_id else "default",
+                language=language,
             ):
                 # 将事件序列化为 SSE 格式
                 event_data = json.dumps(event, ensure_ascii=False)

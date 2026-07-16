@@ -160,6 +160,7 @@ async def login_json(request: UserLogin, db: Session = Depends(get_db)):
             "email": user.email,
             "avatar": user.avatar,
             "roles": roles,
+            "language": user.language,
         },
     }
 
@@ -227,10 +228,39 @@ async def get_profile(
         "avatar": current_user.avatar,
         "is_active": current_user.is_active,
         "roles": roles,
+        "language": current_user.language,
         "last_login_at": current_user.last_login_at,
         "created_at": current_user.created_at,
         "detection_stats": stats,
     }
+
+
+@router.get("/language")
+async def get_language(current_user=Depends(get_current_user)):
+    """获取用户语言偏好"""
+    return {"language": current_user.language}
+
+
+@router.put("/language")
+async def set_language(
+    language: str,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    设置用户语言偏好
+
+    Args:
+        language: 语言代码（zh/中文，en/英文）
+    """
+    if language not in {"zh", "en"}:
+        raise HTTPException(status_code=400, detail="语言参数无效，仅支持 zh 或 en")
+
+    current_user.language = language
+    db.commit()
+    db.refresh(current_user)
+
+    return {"language": language, "message": "语言设置成功"}
 
 
 @router.put("/profile", response_model=ProfileResponse)

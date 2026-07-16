@@ -48,6 +48,7 @@ class User(Base):
     avatar = Column(String(500), nullable=True, comment="头像 URL")
     is_active = Column(Boolean, default=True, comment="是否启用")
     is_superuser = Column(Boolean, default=False, comment="是否超级管理员")
+    language = Column(String(10), default="zh", nullable=False, comment="语言偏好（zh/en）")
     last_login_at = Column(DateTime, nullable=True, comment="最后登录时间")
     reset_token = Column(String(100), nullable=True, comment="密码重置令牌")
     reset_token_expires_at = Column(DateTime, nullable=True, comment="重置令牌过期时间")
