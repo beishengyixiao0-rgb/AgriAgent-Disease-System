@@ -9,10 +9,11 @@
   - GET /api/dashboard/type-dist     任务类型分布统计
 """
 
+from fastapi import APIRouter, Depends, Query
+
 from app.api.auth import get_current_user
 from app.core.logger import get_logger
 from app.services.dashboard_service import dashboard_service
-from fastapi import APIRouter, Depends, Query
 
 logger = get_logger(__name__)
 

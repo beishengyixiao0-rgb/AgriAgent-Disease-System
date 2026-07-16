@@ -14,11 +14,12 @@
 from datetime import datetime
 from typing import Optional
 
+from sqlalchemy import desc, func
+from sqlalchemy.orm import joinedload
+
 from app.core.logger import get_logger
 from app.database.session import SessionLocal
 from app.entity.db_models import DetectionResult, DetectionScene, DetectionTask
-from sqlalchemy import desc, func
-from sqlalchemy.orm import joinedload
 
 logger = get_logger(__name__)
 
