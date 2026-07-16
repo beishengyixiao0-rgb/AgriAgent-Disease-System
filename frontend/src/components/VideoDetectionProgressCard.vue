@@ -4,7 +4,7 @@
       <div class="progress-icon">{{ progress.status === 'failed' ? '!' : '▶' }}</div>
       <div class="progress-title">
         <strong>{{ statusTitle }}</strong>
-        <span :title="progress.fileName">{{ progress.fileName || '视频检测任务' }}</span>
+        <span :title="progress.fileName">{{ progress.fileName || tr('video.task') }}</span>
       </div>
       <span class="status-badge">{{ statusText }}</span>
     </div>
@@ -23,14 +23,19 @@
     </div>
 
     <div class="task-meta">
-      <span v-if="formattedSize">文件大小：{{ formattedSize }}</span>
-      <span v-if="progress.taskId">任务编号：{{ progress.taskId }}</span>
+      <span v-if="formattedSize">{{ tr('video.fileSize', { size: formattedSize }) }}</span>
+      <span v-if="progress.taskId">{{ tr('video.taskId', { id: progress.taskId }) }}</span>
     </div>
   </section>
 </template>
 
 <script setup>
 import { computed } from 'vue'
+import { useLocaleStore } from '@/stores/locale'
+import { t } from '@/utils/i18n'
+
+const localeStore = useLocaleStore()
+const tr = (key, params) => t(key, localeStore.locale, params)
 
 const props = defineProps({
   item: {
@@ -46,12 +51,12 @@ const displayProgress = computed(() => {
   return Math.max(0, Math.min(100, Math.round(value)))
 })
 const statusTitle = computed(() => (
-  progress.value.status === 'failed' ? '视频检测失败' : '视频检测处理中'
+  progress.value.status === 'failed' ? tr('video.failed') : tr('video.processing')
 ))
 const statusText = computed(() => {
-  if (progress.value.status === 'failed') return '失败'
-  if (progress.value.status === 'uploading') return '上传中'
-  return '分析中'
+  if (progress.value.status === 'failed') return tr('video.statusFailed')
+  if (progress.value.status === 'uploading') return tr('video.uploading')
+  return tr('video.analyzing')
 })
 const isIndeterminate = computed(() => (
   displayProgress.value === 0 && progress.value.status !== 'failed'

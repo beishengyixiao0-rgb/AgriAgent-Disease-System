@@ -92,7 +92,7 @@
               class="detection-item"
             >
               <div class="det-info">
-                <span class="det-class">{{ det.class_name }}</span>
+                <span class="det-class">{{ det.class_name_display || det.class_name_cn || det.class_name }}</span>
                 <el-progress
                   :percentage="Math.round(det.confidence * 100)"
                   :stroke-width="6"
@@ -229,7 +229,8 @@ const statusTagType = computed(() => {
 const classDistribution = computed(() => {
   const dist = {};
   for (const det of currentDetections.value) {
-    dist[det.class_name] = (dist[det.class_name] || 0) + 1;
+    const name = det.class_name_display || det.class_name_cn || det.class_name;
+    dist[name] = (dist[name] || 0) + 1;
   }
   return dist;
 });

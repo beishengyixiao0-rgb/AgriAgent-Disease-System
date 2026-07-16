@@ -33,6 +33,8 @@ request.interceptors.request.use(
     if (userStore.token) {
       config.headers.Authorization = `Bearer ${userStore.token}`;
     }
+    const displayLanguage = localStorage.getItem("rsod_locale") === "en" ? "en" : "zh";
+    config.headers["X-Display-Language"] = displayLanguage;
     return config;
   },
   (error) => {

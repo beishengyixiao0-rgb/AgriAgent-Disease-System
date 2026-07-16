@@ -5,15 +5,17 @@
       :current-session-id="currentSessionId"
       @new-diagnosis="startNewDiagnosis"
       @select-session="handleSelectSession"
-      @toggle-pin="handleTogglePin"
       @delete-session="handleDeleteSession"
       @rename-session="handleRenameSession"
     />
 
     <main class="main-area">
       <header class="topbar">
-        <span>Plant Disease Diagnosis</span>
-        <span class="model-status">🟢 Model Ready</span>
+        <span>{{ tr('chat.title') }}</span>
+        <div class="topbar-actions">
+          <span class="model-status">🟢 {{ tr('chat.modelReady') }}</span>
+          <LanguageSwitcher />
+        </div>
       </header>
 
       <ChatMessageList
@@ -55,7 +57,6 @@ import {
   detectSingle,
   detectVideo,
   detectZip,
-  getTrainingTasks,
   getVideoStatus,
 } from '@/api/detection'
 import { ElMessage } from 'element-plus'
@@ -65,11 +66,16 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'v
 import ChatComposer from '@/components/ChatComposer.vue'
 import ChatMessageList from '@/components/ChatMessageList.vue'
 import ChatSidebar from '@/components/ChatSidebar.vue'
+import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 import { useAgentStore } from '@/stores/agent'
+import { useLocaleStore } from '@/stores/locale'
+import { t } from '@/utils/i18n'
 import { streamChat } from '@/utils/stream'
 
 const message = ref('')
 const agentStore = useAgentStore()
+const localeStore = useLocaleStore()
+const tr = (key, params) => t(key, localeStore.locale, params)
 const { messages, sessions, currentSessionId } = storeToRefs(agentStore)
 
 const uploadQueue = ref([])
@@ -83,7 +89,6 @@ const inputCapture = ref(null)
 const showUploadMenu = ref(false)
 const showCameraModal = ref(false)
 const cameraError = ref('')
-const completedTaskId = ref(null)
 
 const chatComposerRef = ref(null)
 const chatMessageListRef = ref(null)
@@ -324,6 +329,43 @@ const handleFileSelection = (files) => {
   selectedFiles.forEach((file) => createUploadItem(file))
 }
 
+/** 把快捷检测原图上传到持久化存储，供历史会话刷新后恢复预览。 */
+const uploadHistoryAttachments = async (files) => {
+  const imageFiles = Array.from(files || []).filter((file) => file.type?.startsWith('image/'))
+  const uploads = await Promise.allSettled(imageFiles.map(async (file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const result = await uploadCommonFile(formData)
+    return result?.attachment_url || result?.data?.attachment_url || null
+  }))
+
+  return uploads
+    .filter((item) => item.status === 'fulfilled' && item.value)
+    .map((item) => item.value)
+}
+
+const persistQuickDetectionHistory = async ({
+  files,
+  userContent,
+  assistantContent,
+  result,
+  attachmentUrls = [],
+}) => {
+  try {
+    const uploadedAttachments = await uploadHistoryAttachments(files)
+    const attachments = [...attachmentUrls, ...uploadedAttachments].filter(Boolean)
+    await agentStore.saveQuickDetection({
+      userContent,
+      assistantContent,
+      detectionResult: result,
+      attachments,
+    })
+  } catch (error) {
+    // 检测已经成功时，历史保存失败不应影响当前结果卡片。
+    console.warn('[快捷检测历史保存失败]', error)
+  }
+}
+
 /**
  * 快捷检测：选择文件后直接调用检测 API，不经过 LLM 对话。
  * 由页面底部输入栏的上传菜单触发。
@@ -345,7 +387,7 @@ async function handleQuickDetect(type, selectedFiles = null) {
       agentStore.addMessage({
         role: 'user',
         type: 'image',
-        content: `[快捷检测] ${file.name}`,
+        content: tr('chat.quick.singleUser', { name: file.name }),
         image: file.name,
         imagePreview,
         imageUrl: imagePreview,
@@ -353,7 +395,7 @@ async function handleQuickDetect(type, selectedFiles = null) {
 
       agentStore.addMessage({
         role: 'assistant',
-        content: '正在检测中...',
+        content: tr('chat.quick.singleLoading'),
         loading: true,
       })
       const loadingMessage = agentStore.messages[agentStore.messages.length - 1]
@@ -363,32 +405,28 @@ async function handleQuickDetect(type, selectedFiles = null) {
       formData.append('file', file)
 
       try {
-        if (!completedTaskId.value) {
-          const taskResponse = await getTrainingTasks()
-          const tasks = taskResponse.items || taskResponse.tasks || []
-          const completedTask = tasks.find((task) => task.status === 'completed')
-
-          if (!completedTask) {
-            throw new Error('当前账号下没有可用的已完成模型')
-          }
-
-          completedTaskId.value = completedTask.id || completedTask.task_id
-        }
-
-        formData.append('task_id', completedTaskId.value)
         formData.append('conf', '0.25')
         formData.append('iou', '0.45')
 
         const result = await detectSingle(formData)
-        loadingMessage.content = `检测完成！发现 ${result.total_objects ?? 0} 个目标。`
+        loadingMessage.content = tr('chat.quick.singleDone', { count: result.total_objects ?? 0 })
         loadingMessage.loading = false
         loadingMessage.type = 'diagnosis'
         loadingMessage.detectionResult = result
-        loadingMessage.annotatedImage = result.annotated_image
-          ? `data:image/jpeg;base64,${result.annotated_image}`
+        const annotatedBase64 = result.annotated_image_base64 || result.annotated_image
+        loadingMessage.annotatedImage = annotatedBase64
+          ? (String(annotatedBase64).startsWith('data:')
+              ? annotatedBase64
+              : `data:image/jpeg;base64,${annotatedBase64}`)
           : result.annotated_image_url || result.result_image_url || ''
+        void persistQuickDetectionHistory({
+          files: [file],
+          userContent: tr('chat.quick.singleUser', { name: file.name }),
+          assistantContent: loadingMessage.content,
+          result,
+        })
       } catch (error) {
-        loadingMessage.content = `检测失败：${getErrorMessage(error)}`
+        loadingMessage.content = tr('chat.quick.singleFailed', { message: getErrorMessage(error) })
         loadingMessage.loading = false
         loadingMessage.error = true
       }
@@ -404,20 +442,20 @@ async function handleQuickDetect(type, selectedFiles = null) {
       formData.append('file', files[0])
       agentStore.addMessage({
         role: 'user',
-        content: `[快捷检测] ZIP: ${files[0].name}`,
+        content: tr('chat.quick.zip', { name: files[0].name }),
       })
     } else {
       files.forEach((file) => formData.append('files', file))
       agentStore.addMessage({
         role: 'user',
-        content: `[快捷检测] ${files.length} 张图片`,
+        content: tr('chat.quick.batchImages', { count: files.length }),
         images: files.map((file) => URL.createObjectURL(file)),
       })
     }
 
     agentStore.addMessage({
       role: 'assistant',
-      content: '正在批量检测中...',
+      content: tr('chat.quick.batchLoading'),
       loading: true,
     })
     const loadingMessage = agentStore.messages[agentStore.messages.length - 1]
@@ -427,7 +465,7 @@ async function handleQuickDetect(type, selectedFiles = null) {
       const result = await (isZip ? detectZip(formData) : detectBatch(formData))
 
       if (result.error) {
-        loadingMessage.content = `批量检测失败：${result.error}`
+        loadingMessage.content = tr('chat.quick.batchFailed', { message: result.error })
         loadingMessage.loading = false
         loadingMessage.error = true
         scrollToBottom()
@@ -444,13 +482,21 @@ async function handleQuickDetect(type, selectedFiles = null) {
           }
         : result
 
-      loadingMessage.content = `批量检测完成！共 ${displayResult.total_objects ?? 0} 个目标。`
+      loadingMessage.content = tr('chat.quick.batchDone', { count: displayResult.total_objects ?? 0 })
       loadingMessage.loading = false
       loadingMessage.type = 'diagnosis'
       loadingMessage.detectionResult = displayResult
       loadingMessage.annotatedImage = displayResult.annotated_image_url || displayResult.result_image_url || ''
+      void persistQuickDetectionHistory({
+        files,
+        userContent: isZip
+          ? tr('chat.quick.zip', { name: files[0].name })
+          : tr('chat.quick.batchImages', { count: files.length }),
+        assistantContent: loadingMessage.content,
+        result: displayResult,
+      })
     } catch (error) {
-      loadingMessage.content = `批量检测失败：${getErrorMessage(error)}`
+      loadingMessage.content = tr('chat.quick.batchFailed', { message: getErrorMessage(error) })
       loadingMessage.loading = false
       loadingMessage.error = true
     }
@@ -535,7 +581,7 @@ async function pollVideoProgress(taskId, loadingMessage) {
 
       if (['completed', 'complete', 'success', 'succeeded', 'finished', 'done'].includes(status)) {
         const result = normalizeVideoResult(payload, taskId)
-        loadingMessage.content = `视频检测完成！共发现 ${result.total_objects ?? 0} 个目标。`
+        loadingMessage.content = tr('chat.video.done', { count: result.total_objects ?? 0 })
         loadingMessage.loading = false
         loadingMessage.type = 'diagnosis'
         loadingMessage.detectionResult = result
@@ -582,7 +628,7 @@ async function handleVideoDetect(selectedFile = null) {
     agentStore.addMessage({
       role: "user",
       type: "video",
-      content: `[视频检测] ${file.name} (${(
+      content: `${tr('chat.video.user', { name: file.name })} (${(
         file.size /
         (1024 * 1024)
       ).toFixed(1)} MB)`,
@@ -634,12 +680,20 @@ async function handleVideoDetect(selectedFile = null) {
       });
 
       // 轮询检测进度
-      await pollVideoProgress(taskId, loadingMessage);
+      const result = await pollVideoProgress(taskId, loadingMessage);
+      if (result) {
+        void persistQuickDetectionHistory({
+          files: [],
+          userContent: tr('chat.video.user', { name: file.name }),
+          assistantContent: loadingMessage.content,
+          result,
+          attachmentUrls: [result.source_video_url],
+        });
+      }
     } catch (error) {
       console.error("[视频检测失败]", error);
 
-      loadingMessage.content =
-        `视频检测失败：${getErrorMessage(error)}`;
+      loadingMessage.content = tr('chat.video.failed', { message: getErrorMessage(error) });
 
       loadingMessage.loading = false;
       loadingMessage.error = true;
@@ -733,6 +787,10 @@ const sendMessage = async () => {
   )).filter(Boolean)
   const imagePath = attachmentPaths.length === 1 ? attachmentPaths[0] : null
   const imagePaths = attachmentPaths.length > 1 ? attachmentPaths : null
+  const attachmentUrls = attachments.map((item) => (
+    item.uploadResult?.attachment_url
+    || item.uploadResult?.data?.attachment_url
+  )).filter(Boolean)
 
   const userMessage = {
     role: 'user',
@@ -774,6 +832,7 @@ const sendMessage = async () => {
       message: userMessage.content,
       image_path: imagePath,
       image_paths: imagePaths,
+      attachment_urls: attachmentUrls,
       session_id: agentStore.currentSessionId,
     },
     {
@@ -953,10 +1012,6 @@ const handleSelectSession = async (sessionId) => {
   await scrollToBottom()
 }
 
-const handleTogglePin = async (sessionId) => {
-  await agentStore.togglePinSession(sessionId)
-}
-
 const handleDeleteSession = async (sessionId) => {
   const deletingCurrent = String(sessionId) === String(currentSessionId.value)
   const deleted = await agentStore.deleteSession(sessionId)
@@ -1002,6 +1057,12 @@ const handleRenameSession = async (sessionId, newTitle) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .model-status {

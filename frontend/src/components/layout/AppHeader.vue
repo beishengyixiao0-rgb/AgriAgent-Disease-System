@@ -8,6 +8,7 @@
 
     <!-- 右侧：用户信息 + 退出按钮 -->
     <div class="header-right">
+      <LanguageSwitcher />
       <el-dropdown trigger="click" @command="handleCommand">
         <div class="user-info">
           <el-avatar :size="32" :src="userStore.avatar || undefined">
@@ -19,10 +20,10 @@
         <template #dropdown>
           <el-dropdown-menu>
             <el-dropdown-item command="profile">
-              <el-icon><User /></el-icon>个人中心
+              <el-icon><User /></el-icon>{{ tr('user.profile') }}
             </el-dropdown-item>
             <el-dropdown-item command="logout" divided>
-              <el-icon><SwitchButton /></el-icon>退出登录
+              <el-icon><SwitchButton /></el-icon>{{ tr('user.logout') }}
             </el-dropdown-item>
           </el-dropdown-menu>
         </template>
@@ -36,9 +37,14 @@ import { useRouter } from 'vue-router'
 import { ArrowDown, User, SwitchButton } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
+import { useLocaleStore } from '@/stores/locale'
+import { t } from '@/utils/i18n'
+import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
+const localeStore = useLocaleStore()
+const tr = (key) => t(key, localeStore.locale)
 
 /** 处理下拉菜单命令 */
 function handleCommand(command) {
@@ -47,9 +53,9 @@ function handleCommand(command) {
       // 个人中心（后续实现）
       break
     case 'logout':
-      ElMessageBox.confirm('确定要退出登录吗？', '提示', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+      ElMessageBox.confirm(tr('user.logoutConfirm'), tr('common.tip'), {
+        confirmButtonText: tr('common.confirm'),
+        cancelButtonText: tr('common.cancel'),
         type: 'warning',
       })
         .then(() => {
@@ -95,6 +101,7 @@ function handleCommand(command) {
 .header-right {
   display: flex;
   align-items: center;
+  gap: 12px;
 }
 
 .user-info {

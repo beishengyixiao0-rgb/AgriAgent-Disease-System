@@ -58,7 +58,8 @@ class CameraWs {
 
     const host = window.location.host;
 
-    const wsUrl = `${protocol}//${host}/api/detection/camera`;
+    const displayLanguage = localStorage.getItem("rsod_locale") === "en" ? "en" : "zh";
+    const wsUrl = `${protocol}//${host}/api/detection/camera?display_language=${encodeURIComponent(displayLanguage)}`;
 
     this.ws = new WebSocket(wsUrl);
 
@@ -74,6 +75,7 @@ class CameraWs {
           conf: this.conf,
           iou: this.iou,
           scene_id: this.sceneId,
+          display_language: displayLanguage,
         }),
       );
     };

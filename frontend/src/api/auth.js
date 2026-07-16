@@ -33,3 +33,10 @@ export function getUserInfoApi() {
 export function getUserProfileApi() {
     return request.get('/auth/profile')
 }
+
+/** 保存当前用户的界面/模型回复语言偏好。 */
+export function updateDisplayLanguageApi(displayLanguage) {
+    return request.put('/auth/preferences', {
+        display_language: displayLanguage === 'en' ? 'en' : 'zh',
+    })
+}

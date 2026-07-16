@@ -4,7 +4,7 @@
       <div>
         <div class="agent-label">
           <span class="agent-icon">✦</span>
-          AI Agent 病害分析
+          {{ tr('agent.title') }}
         </div>
 
       </div>
@@ -12,22 +12,22 @@
     </header>
 
     <div v-if="item.agentPrompt" class="prompt-row">
-      <span>用户问题</span>
+      <span>{{ tr('agent.question') }}</span>
       <p>{{ item.agentPrompt }}</p>
     </div>
 
     <div v-if="item.loading && !hasResult" class="agent-progress">
       <span class="loading-dot" />
       <div>
-        <strong>正在分析图片并调用检测模型</strong>
-        <p>检测完成后，Agent 将结合结果生成易读的分析。</p>
+        <strong>{{ tr('agent.analyzing') }}</strong>
+        <p>{{ tr('agent.analyzingDesc') }}</p>
       </div>
     </div>
 
     <section v-if="hasResult" class="detection-section">
       <div class="section-heading">
         <div>
-          <span class="section-kicker">YOLO 检测结果</span>
+          <span class="section-kicker">{{ tr('result.yolo') }}</span>
           <h4>{{ detectedCategories }}</h4>
         </div>
         <span class="tool-badge">Detection</span>
@@ -36,15 +36,15 @@
       <div class="result-summary">
         <div class="summary-item">
           <strong>{{ totalObjects }}</strong>
-          <span>检测目标</span>
+          <span>{{ tr('result.targetCount') }}</span>
         </div>
         <div class="summary-item">
           <strong>{{ classCountItems.length }}</strong>
-          <span>病害类别</span>
+          <span>{{ tr('agent.diseaseClasses') }}</span>
         </div>
         <div class="summary-item">
           <strong>{{ inferenceTime }}</strong>
-          <span>推理耗时</span>
+          <span>{{ tr('result.inferenceTime') }}</span>
         </div>
       </div>
 
@@ -55,7 +55,7 @@
         @click="openPreview(annotatedImage)"
       >
         <img :src="annotatedImage" alt="YOLO 标注结果" />
-        <span>点击查看标注大图</span>
+        <span>{{ tr('agent.viewImage') }}</span>
       </button>
 
       <div v-if="batchImages.length" class="batch-grid">
@@ -73,8 +73,8 @@
 
       <div class="targets-section">
         <div class="targets-title">
-          <strong>检测目标</strong>
-          <span>{{ totalObjects }} 个</span>
+          <strong>{{ tr('result.targetCount') }}</strong>
+          <span>{{ tr('result.targetsWithCount', { count: totalObjects }) }}</span>
         </div>
 
         <div v-if="detections.length" class="target-list">
@@ -84,7 +84,7 @@
               <strong>{{ getDetectionName(detection) }}</strong>
             </div>
             <span v-if="getDetectionConfidence(detection) !== null" class="confidence-pill">
-              置信度 {{ getDetectionConfidence(detection) }}%
+              {{ tr('agent.confidence', { value: getDetectionConfidence(detection) }) }}
             </span>
           </div>
         </div>
@@ -95,7 +95,7 @@
           </span>
         </div>
 
-        <p v-else class="empty-targets">未检测到明确病害目标。</p>
+        <p v-else class="empty-targets">{{ tr('agent.noTargets') }}</p>
       </div>
     </section>
 
@@ -104,8 +104,8 @@
       <div class="analysis-title">
         <span class="analysis-icon">AI</span>
         <div>
-          <strong>大模型分析</strong>
-          <p>基于上方 YOLO 检测结果生成</p>
+          <strong>{{ tr('agent.analysis') }}</strong>
+          <p>{{ tr('agent.analysisDesc') }}</p>
         </div>
       </div>
 
@@ -148,6 +148,11 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { useLocaleStore } from '@/stores/locale'
+import { t } from '@/utils/i18n'
+
+const localeStore = useLocaleStore()
+const tr = (key, params) => t(key, localeStore.locale, params)
 
 const props = defineProps({
   item: {
@@ -166,7 +171,7 @@ const detections = computed(() => (
 ))
 
 const getDetectionName = (detection) => (
-  detection.class_name || detection.disease_name || detection.label || detection.name || '未知类别'
+  detection.class_name_display || detection.class_name_cn || detection.class_name || detection.disease_name || detection.label || detection.name || '未知类别'
 )
 
 const getDetectionConfidence = (detection) => {
@@ -176,7 +181,7 @@ const getDetectionConfidence = (detection) => {
 }
 
 const classCountItems = computed(() => {
-  const counts = resultData.value.class_counts
+  const counts = resultData.value.class_counts_display || resultData.value.class_counts
   if (counts && typeof counts === 'object') {
     return Object.entries(counts).map(([name, count]) => ({ name, count }))
   }

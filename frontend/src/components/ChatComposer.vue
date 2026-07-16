@@ -28,69 +28,69 @@
           <div class="upload-info">
             <div class="upload-name">{{ item.name }}</div>
             <div class="upload-meta">
-              {{ item.type === 'video' ? '视频' : '图片' }} · {{ getChineseModeLabel(item.mode) }}
+              {{ item.type === 'video' ? tr('composer.video') : tr('composer.image') }} · {{ getModeLabel(item.mode) }}
             </div>
             <div class="upload-progress-track">
               <div class="upload-progress-bar" :style="{ width: item.progress + '%' }" />
             </div>
             <div class="upload-status">
-              <span v-if="item.status === 'uploading'">正在上传… {{ item.progress }}%</span>
+              <span v-if="item.status === 'uploading'">{{ tr('composer.uploading', { progress: item.progress }) }}</span>
               <span
                 v-else-if="item.status === 'success' && (item.mode === 'agent-image' || item.mode === 'camera')"
                 class="success-text"
-              >上传成功，可输入内容后发送 ✓</span>
-              <span v-else-if="item.status === 'success'" class="success-text">上传完成 ✓</span>
-              <span v-else class="error-text">{{ item.errorMessage || '上传失败' }}</span>
+              >{{ tr('composer.uploadReady') }}</span>
+              <span v-else-if="item.status === 'success'" class="success-text">{{ tr('composer.uploadDone') }}</span>
+              <span v-else class="error-text">{{ item.errorMessage || tr('composer.uploadFailed') }}</span>
             </div>
           </div>
         </div>
 
         <div class="upload-item-actions">
-          <button v-if="item.status === 'error'" class="retry-upload" @click="$emit('retry-upload', item.id)">重试</button>
-          <button class="upload-remove" @click="$emit('remove-upload-item', item.id)" aria-label="移除上传文件">×</button>
+          <button v-if="item.status === 'error'" class="retry-upload" @click="$emit('retry-upload', item.id)">{{ tr('composer.retry') }}</button>
+          <button class="upload-remove" @click="$emit('remove-upload-item', item.id)" :aria-label="tr('composer.remove')">×</button>
         </div>
       </div>
     </div>
 
     <div v-if="showUploadMenu" class="upload-menu">
-      <div class="upload-menu-title">添加内容与检测方式</div>
+      <div class="upload-menu-title">{{ tr('composer.addContent') }}</div>
       <button class="upload-option primary" @click="$emit('select-upload-mode', 'agent-image')">
         <span class="option-icon"><Picture /></span>
-        <span class="option-copy"><strong>添加图片到 Agent 对话</strong><small>结合图片与文字问题进行智能分析</small></span>
+        <span class="option-copy"><strong>{{ tr('composer.agentImage') }}</strong><small>{{ tr('composer.agentImageDesc') }}</small></span>
       </button>
       <button class="upload-option" @click="$emit('select-upload-mode', 'image')">
         <span class="option-icon"><Lightning /></span>
-        <span class="option-copy"><strong>快捷单图检测</strong><small>跳过大模型，直接获得确定性检测结果</small></span>
+        <span class="option-copy"><strong>{{ tr('composer.single') }}</strong><small>{{ tr('composer.singleDesc') }}</small></span>
       </button>
       <button class="upload-option" @click="$emit('select-upload-mode', 'batch')">
         <span class="option-icon"><Files /></span>
-        <span class="option-copy"><strong>快捷批量检测</strong><small>上传多张图片或 ZIP 压缩包</small></span>
+        <span class="option-copy"><strong>{{ tr('composer.batch') }}</strong><small>{{ tr('composer.batchDesc') }}</small></span>
       </button>
       <button class="upload-option" @click="$emit('select-upload-mode', 'video')">
         <span class="option-icon"><VideoCamera /></span>
-        <span class="option-copy"><strong>视频检测</strong><small>上传作物视频并查看标注结果</small></span>
+        <span class="option-copy"><strong>{{ tr('composer.video') }}</strong><small>{{ tr('composer.videoDesc') }}</small></span>
       </button>
       <button class="upload-option" @click="$emit('select-upload-mode', 'realtime-camera')">
         <span class="option-icon"><Monitor /></span>
-        <span class="option-copy"><strong>实时摄像头检测</strong><small>连接摄像头持续识别病害目标</small></span>
+        <span class="option-copy"><strong>{{ tr('composer.realtime') }}</strong><small>{{ tr('composer.realtimeDesc') }}</small></span>
       </button>
       <button class="upload-option" @click="$emit('select-upload-mode', 'camera')">
         <span class="option-icon"><Camera /></span>
-        <span class="option-copy"><strong>相机拍摄</strong><small>拍照上传后，可补充文字再发送</small></span>
+        <span class="option-copy"><strong>{{ tr('composer.camera') }}</strong><small>{{ tr('composer.cameraDesc') }}</small></span>
       </button>
     </div>
 
     <div v-if="showCameraModal" class="camera-modal">
       <div class="camera-panel">
         <div class="camera-header">
-          <strong>相机拍摄</strong>
-          <button class="upload-remove" @click="$emit('close-camera')" aria-label="关闭相机">×</button>
+          <strong>{{ tr('composer.camera') }}</strong>
+          <button class="upload-remove" @click="$emit('close-camera')" :aria-label="tr('composer.closeCamera')">×</button>
         </div>
         <video ref="cameraVideoRef" autoplay playsinline muted class="camera-video" />
         <canvas ref="cameraCanvasRef" class="camera-canvas" />
         <div class="camera-actions">
-          <button class="camera-action secondary" @click="$emit('close-camera')">取消</button>
-          <button class="camera-action primary" @click="captureCameraPhoto">拍摄照片</button>
+          <button class="camera-action secondary" @click="$emit('close-camera')">{{ tr('composer.cancel') }}</button>
+          <button class="camera-action primary" @click="captureCameraPhoto">{{ tr('composer.capture') }}</button>
         </div>
         <div v-if="cameraError" class="camera-error">{{ cameraError }}</div>
       </div>
@@ -102,7 +102,7 @@
         class="add-btn"
         :class="{ active: showUploadMenu }"
         :aria-expanded="showUploadMenu"
-        aria-label="添加图片或选择检测方式"
+        :aria-label="tr('composer.addAria')"
         @click="$emit('toggle-upload-menu')"
       >
         <Plus />
@@ -112,8 +112,8 @@
         ref="textareaRef"
         :value="modelValue"
         rows="1"
-        placeholder="询问作物病害，或添加图片进行分析…"
-        aria-label="对话输入"
+        :placeholder="tr('composer.placeholder')"
+        :aria-label="tr('composer.inputAria')"
         @input="handleTextInput"
         @keydown.enter.exact.prevent="$emit('send-message')"
       />
@@ -135,7 +135,7 @@
           type="button"
           class="send-btn"
           :disabled="!canSend"
-          aria-label="发送消息"
+          :aria-label="tr('composer.send')"
           @click="$emit('send-message')"
         >
           <Promotion />
@@ -145,13 +145,13 @@
 
     <div v-if="isListening" class="voice-status listening-status">
       <span class="listening-bars"><i /><i /><i /><i /></span>
-      正在聆听，请用中文描述作物症状…
-      <button type="button" @click="stopVoiceInput">停止</button>
+      {{ tr('composer.listening') }}
+      <button type="button" @click="stopVoiceInput">{{ tr('composer.stop') }}</button>
     </div>
     <div v-else-if="speechError" class="voice-status voice-error">{{ speechError }}</div>
 
     <div class="input-tip">
-      按 Enter 发送，Shift + Enter 换行 · 支持图片、ZIP、视频、相机与中文语音输入
+      {{ tr('composer.tip') }}
     </div>
     </div>
   </div>
@@ -160,6 +160,11 @@
 <script setup>
 import { Camera, Files, Lightning, Microphone, Monitor, Picture, Plus, Promotion, VideoCamera } from '@element-plus/icons-vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useLocaleStore } from '@/stores/locale'
+import { t } from '@/utils/i18n'
+
+const localeStore = useLocaleStore()
+const tr = (key, params) => t(key, localeStore.locale, params)
 
 const props = defineProps({
   modelValue: {
@@ -231,17 +236,17 @@ const canSend = computed(() => {
   return uploadsFinished && (hasContent || props.allowEmptySubmit)
 })
 const voiceButtonTitle = computed(() => {
-  if (!speechSupported.value) return '当前浏览器不支持语音输入'
-  return isListening.value ? '停止语音输入' : '开始中文语音输入'
+  if (!speechSupported.value) return tr('composer.voiceUnsupported')
+  return isListening.value ? tr('composer.voiceStop') : tr('composer.voiceStart')
 })
 
-const getChineseModeLabel = (mode) => ({
-  'agent-image': 'Agent 图片对话',
-  image: '单图检测',
-  batch: '批量检测',
-  video: '视频检测',
-  camera: '相机拍摄',
-}[mode] || '文件上传')
+const getModeLabel = (mode) => ({
+  'agent-image': tr('composer.agentImage'),
+  image: tr('composer.single'),
+  batch: tr('composer.batch'),
+  video: tr('composer.video'),
+  camera: tr('composer.camera'),
+}[mode] || tr('composer.file'))
 
 const resizeTextarea = () => {
   const textarea = textareaRef.value
@@ -352,7 +357,7 @@ const setupSpeechRecognition = () => {
   if (!Recognition) return
 
   speechRecognition = new Recognition()
-  speechRecognition.lang = 'zh-CN'
+  speechRecognition.lang = localeStore.locale === 'en' ? 'en-US' : 'zh-CN'
   speechRecognition.continuous = false
   speechRecognition.interimResults = true
   speechRecognition.maxAlternatives = 1
@@ -421,6 +426,10 @@ onBeforeUnmount(() => {
 })
 
 watch(() => props.modelValue, () => nextTick(resizeTextarea))
+
+watch(() => localeStore.locale, (locale) => {
+  if (speechRecognition) speechRecognition.lang = locale === 'en' ? 'en-US' : 'zh-CN'
+})
 
 defineExpose({ openFilePicker })
 </script>

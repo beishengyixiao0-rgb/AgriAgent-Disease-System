@@ -7,11 +7,13 @@
 
       <div class="nav-actions">
         <div class="nav-links">
-          <button @click="go('/ai-chat')">AI Agent</button>
-          <button @click="go('/data-analysis')">Analytics</button>
-          <button @click="go('/history')">History</button>
-          <button @click="go('/training')">Training</button>
+          <button @click="go('/ai-chat')">{{ tr('nav.chat') }}</button>
+          <button @click="go('/data-analysis')">{{ tr('nav.dashboard') }}</button>
+          <button @click="go('/history')">{{ tr('nav.history') }}</button>
+          <button @click="go('/training')">{{ tr('nav.training') }}</button>
         </div>
+
+        <LanguageSwitcher />
 
         <div class="user-menu" @mouseenter="showUserMenu = true" @mouseleave="showUserMenu = false">
           <button class="user-trigger" @click="toggleUserMenu">
@@ -35,25 +37,25 @@
 
             <div class="dropdown-body">
               <div class="info-row">
-                <span>邮箱</span>
+                <span>{{ tr('home.email') }}</span>
                 <strong>{{ userStore.user?.email || '—' }}</strong>
               </div>
               <div class="info-row">
-                <span>角色</span>
+                <span>{{ tr('home.role') }}</span>
                 <strong>{{ roleLabel }}</strong>
               </div>
               <div class="info-row">
-                <span>账号状态</span>
+                <span>{{ tr('home.accountStatus') }}</span>
                 <strong :class="userStore.user?.is_active === false ? 'status-disabled' : 'status-active'">
-                  {{ userStore.user?.is_active === false ? '已停用' : '正常' }}
+                  {{ userStore.user?.is_active === false ? tr('home.disabled') : tr('home.active') }}
                 </strong>
               </div>
               <div class="info-row">
-                <span>手机号</span>
+                <span>{{ tr('home.phone') }}</span>
                 <strong>{{ userStore.user?.phone || '—' }}</strong>
               </div>
               <div class="info-row">
-                <span>最近登录</span>
+                <span>{{ tr('home.lastLogin') }}</span>
                 <strong>{{ formatDate(userStore.user?.last_login_at) }}</strong>
               </div>
             </div>
@@ -61,11 +63,11 @@
             <div v-if="userStore.user?.detection_stats" class="profile-stats">
               <div>
                 <strong>{{ userStore.user.detection_stats.total_tasks ?? 0 }}</strong>
-                <span>检测任务</span>
+                <span>{{ tr('home.tasks') }}</span>
               </div>
               <div>
                 <strong>{{ userStore.user.detection_stats.total_objects ?? 0 }}</strong>
-                <span>检测目标</span>
+                <span>{{ tr('home.objects') }}</span>
               </div>
             </div>
 
@@ -73,7 +75,7 @@
               {{ userStore.isAdmin ? '管理员权限已启用' : '可使用检测与智能对话功能' }}
             </div>
 
-            <button class="logout-btn" @click="handleLogout">退出登录</button>
+            <button class="logout-btn" @click="handleLogout">{{ tr('user.logout') }}</button>
           </div>
         </div>
       </div>
@@ -84,10 +86,10 @@
         <WeatherBadge />
 
         <h1>Agri<span>Agent</span></h1>
-        <h2>今天想分析什么农业问题？</h2>
+        <h2>{{ tr('home.hero') }}</h2>
 
         <p class="subtitle">
-          AgriAgent 将自动完成病害诊断、知识检索与数据分析。
+          {{ tr('home.subtitle') }}
         </p>
 
         <div class="home-prompt-area">
@@ -101,30 +103,30 @@
           />
 
           <div v-if="showAttachmentMenu" class="home-attachment-menu">
-            <div class="attachment-menu-title">添加附件与检测方式</div>
+            <div class="attachment-menu-title">{{ tr('home.attachmentTitle') }}</div>
             <button type="button" class="attachment-option primary" @click="selectAttachmentMode('agent-image')">
               <span class="option-icon"><Picture /></span>
-              <span class="option-copy"><strong>添加图片到 Agent 对话</strong><small>结合图片与文字问题进行智能分析</small></span>
+              <span class="option-copy"><strong>{{ tr('composer.agentImage') }}</strong><small>{{ tr('composer.agentImageDesc') }}</small></span>
             </button>
             <button type="button" class="attachment-option" @click="selectAttachmentMode('image')">
               <span class="option-icon"><Lightning /></span>
-              <span class="option-copy"><strong>快捷单图检测</strong><small>跳过大模型，直接获得确定性检测结果</small></span>
+              <span class="option-copy"><strong>{{ tr('composer.single') }}</strong><small>{{ tr('composer.singleDesc') }}</small></span>
             </button>
             <button type="button" class="attachment-option" @click="selectAttachmentMode('batch')">
               <span class="option-icon"><Files /></span>
-              <span class="option-copy"><strong>快捷批量检测</strong><small>上传多张图片或 ZIP 压缩包</small></span>
+              <span class="option-copy"><strong>{{ tr('composer.batch') }}</strong><small>{{ tr('composer.batchDesc') }}</small></span>
             </button>
             <button type="button" class="attachment-option" @click="selectAttachmentMode('video')">
               <span class="option-icon"><VideoCamera /></span>
-              <span class="option-copy"><strong>视频检测</strong><small>上传作物视频并查看标注结果</small></span>
+              <span class="option-copy"><strong>{{ tr('composer.video') }}</strong><small>{{ tr('composer.videoDesc') }}</small></span>
             </button>
             <button type="button" class="attachment-option" @click="selectAttachmentMode('realtime-camera')">
               <span class="option-icon"><Monitor /></span>
-              <span class="option-copy"><strong>实时摄像头检测</strong><small>连接摄像头持续识别病害目标</small></span>
+              <span class="option-copy"><strong>{{ tr('composer.realtime') }}</strong><small>{{ tr('composer.realtimeDesc') }}</small></span>
             </button>
             <button type="button" class="attachment-option" @click="selectAttachmentMode('camera')">
               <span class="option-icon"><Camera /></span>
-              <span class="option-copy"><strong>相机拍摄</strong><small>拍照上传后，可补充文字再发送</small></span>
+              <span class="option-copy"><strong>{{ tr('composer.camera') }}</strong><small>{{ tr('composer.cameraDesc') }}</small></span>
             </button>
           </div>
 
@@ -143,7 +145,7 @@
             v-model="prompt"
             rows="1"
             aria-label="Ask AgriAgent"
-            placeholder="描述作物问题、上传图片，或直接告诉我您想分析什么……"
+            :placeholder="tr('home.placeholder')"
             @keydown.enter.exact.prevent="startConversation"
           />
           <button class="prompt-submit" type="submit" :disabled="!prompt.trim()" aria-label="Send to AgriAgent">
@@ -153,7 +155,7 @@
 
         </div>
 
-        <p class="prompt-hint">按 Enter 开始对话 · 点击 + 添加图片、视频或选择检测方式</p>
+        <p class="prompt-hint">{{ tr('home.hint') }}</p>
 
         <div class="suggestion-list" aria-label="Suggested questions">
           <button
@@ -215,6 +217,9 @@
 import { useAgentStore } from '@/stores/agent'
 import { useUserStore } from '@/stores/user'
 import WeatherBadge from '@/components/WeatherBadge.vue'
+import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
+import { useLocaleStore } from '@/stores/locale'
+import { t } from '@/utils/i18n'
 import { Camera, Files, Lightning, Monitor, Picture, Plus, VideoCamera } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { computed, nextTick, onMounted, ref } from 'vue'
@@ -223,8 +228,10 @@ import { useRouter } from 'vue-router'
 const router = useRouter()
 const userStore = useUserStore()
 const agentStore = useAgentStore()
+const localeStore = useLocaleStore()
+const tr = (key, params) => t(key, localeStore.locale, params)
 
-const roleLabel = computed(() => (userStore.isAdmin ? '系统管理员' : '普通用户'))
+const roleLabel = computed(() => (userStore.isAdmin ? tr('home.admin') : tr('home.user')))
 const userInitial = computed(() => (userStore.username || 'U').charAt(0).toUpperCase())
 const showUserMenu = ref(false)
 const prompt = ref('')
@@ -234,11 +241,11 @@ const homeFileMode = ref('agent-image')
 const homeFileAccept = ref('image/*')
 const homeFileMultiple = ref(false)
 
-const suggestions = [
-  '帮我分析一张叶片图片',
-  '我有哪些可用的检测模型？',
-  '查看最近的检测结果',
-]
+const suggestions = computed(() => [
+  tr('home.suggestionAnalyze'),
+  tr('home.suggestionModels'),
+  tr('home.suggestionRecent'),
+])
 
 const go = (path) => {
   router.push(path)
@@ -254,7 +261,7 @@ const startConversation = (suggestion = '') => {
 }
 
 const routeHomeAction = (mode, files = []) => {
-  const defaultPrompt = mode === 'agent-image' ? '请帮我分析这张图片' : ''
+  const defaultPrompt = mode === 'agent-image' ? tr('home.analyzeImagePrompt') : ''
   agentStore.queueHomePrompt(prompt.value.trim() || defaultPrompt, { mode, files })
   prompt.value = ''
   showAttachmentMenu.value = false
@@ -295,7 +302,7 @@ const toggleUserMenu = () => {
 const handleLogout = () => {
   userStore.logout()
   showUserMenu.value = false
-  ElMessage.success('已退出登录')
+  ElMessage.success(tr('home.logoutDone'))
   router.push('/login')
 }
 
@@ -303,7 +310,7 @@ const formatDate = (value) => {
   if (!value) return '—'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '—'
-  return date.toLocaleString('zh-CN', {
+  return date.toLocaleString(localeStore.locale === 'en' ? 'en-US' : 'zh-CN', {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',

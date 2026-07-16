@@ -3,40 +3,39 @@
     <div v-if="messages.length === 0" class="welcome-panel">
       <div class="welcome-icon">🌿</div>
 
-      <h1>Plant Disease Diagnosis</h1>
+      <h1>{{ tr('chat.welcomeTitle') }}</h1>
 
       <p class="welcome-desc">
-        Upload a photo, batch images, a video or use the camera<br>
-        to get instant AI diagnosis and treatment recommendations.
+        {{ tr('chat.welcomeDesc') }}
       </p>
 
       <div class="suggestions-grid">
         <div
           class="suggestion-card"
-          @click="$emit('use-suggestion', 'What disease is affecting my tomato leaf?')"
+          @click="$emit('use-suggestion', tr('chat.suggestion1'))"
         >
-          What disease is affecting my tomato leaf?
+          {{ tr('chat.suggestion1') }}
         </div>
 
         <div
           class="suggestion-card"
-          @click="$emit('use-suggestion', 'How to treat grape black rot?')"
+          @click="$emit('use-suggestion', tr('chat.suggestion2'))"
         >
-          How to treat grape black rot?
+          {{ tr('chat.suggestion2') }}
         </div>
 
         <div
           class="suggestion-card"
-          @click="$emit('use-suggestion', 'Why are my pepper leaves turning yellow?')"
+          @click="$emit('use-suggestion', tr('chat.suggestion3'))"
         >
-          Why are my pepper leaves turning yellow?
+          {{ tr('chat.suggestion3') }}
         </div>
 
         <div
           class="suggestion-card"
-          @click="$emit('use-suggestion', 'Identify disease in my strawberry plant.')"
+          @click="$emit('use-suggestion', tr('chat.suggestion4'))"
         >
-          Identify disease in my strawberry plant.
+          {{ tr('chat.suggestion4') }}
         </div>
       </div>
 
@@ -49,7 +48,7 @@
         :class="['message-row', item.role]"
       >
         <div class="message-avatar">
-          {{ item.role === 'assistant' ? '🌿' : 'You' }}
+          {{ item.role === 'assistant' ? '🌿' : tr('chat.you') }}
         </div>
 
         <div v-if="item.type === 'image' || item.imagePreview" class="image-message">
@@ -118,6 +117,11 @@ import DetectionResultCard from '@/components/DetectionResultCard.vue'
 import RealtimeDetectionCard from '@/components/RealtimeDetectionCard.vue'
 import VideoDetectionProgressCard from '@/components/VideoDetectionProgressCard.vue'
 import { ref } from 'vue'
+import { useLocaleStore } from '@/stores/locale'
+import { t } from '@/utils/i18n'
+
+const localeStore = useLocaleStore()
+const tr = (key, params) => t(key, localeStore.locale, params)
 
 const props = defineProps({
   messages: {

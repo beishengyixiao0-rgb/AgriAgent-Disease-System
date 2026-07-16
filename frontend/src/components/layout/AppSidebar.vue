@@ -11,7 +11,7 @@
         <el-icon>
           <component :is="item.icon" />
         </el-icon>
-        <span>{{ item.title }}</span>
+        <span>{{ tr(item.titleKey) }}</span>
       </el-menu-item>
     </el-menu>
   </aside>
@@ -27,8 +27,12 @@ import {
 } from '@element-plus/icons-vue'
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
+import { useLocaleStore } from '@/stores/locale'
+import { t } from '@/utils/i18n'
 
 const route = useRoute()
+const localeStore = useLocaleStore()
+const tr = (key) => t(key, localeStore.locale)
 
 /** 当前激活的菜单项 */
 const activeMenu = computed(() => {
@@ -37,11 +41,11 @@ const activeMenu = computed(() => {
 
 /** 侧边栏菜单配置 */
 const menuItems = [
-  { path: '/', title: 'Home', icon: House },
-  { path: '/ai-chat', title: 'AI Agent', icon: ChatDotRound },
-  { path: '/data-analysis', title: 'Analytics', icon: DataAnalysis },
-  { path: '/history', title: 'History', icon: Clock },
-  { path: '/training', title: 'Training', icon: Cpu },
+  { path: '/', titleKey: 'nav.home', icon: House },
+  { path: '/ai-chat', titleKey: 'nav.chat', icon: ChatDotRound },
+  { path: '/data-analysis', titleKey: 'nav.dashboard', icon: DataAnalysis },
+  { path: '/history', titleKey: 'nav.history', icon: Clock },
+  { path: '/training', titleKey: 'nav.training', icon: Cpu },
 ]
 </script>
 

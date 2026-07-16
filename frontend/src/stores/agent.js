@@ -101,7 +101,7 @@ export const useAgentStore = defineStore('agent', {
     async loadSessions() {
       try {
         const response = await request.get('/chat/sessions')
-        this.sessions = Array.isArray(response?.data) ? response.data : []
+        this.sessions = Array.isArray(response?.sessions) ? response.sessions : []
         this.sortSessions()
       } catch (error) {
         console.error('加载会话列表失败:', error)
@@ -112,24 +112,55 @@ export const useAgentStore = defineStore('agent', {
     /** 加载历史消息，并把持久化的工具结果恢复成检测卡片数据 */
     async loadSessionMessages(sessionId) {
       try {
-        const response = await request.get(`/chat/sessions/${sessionId}/messages`)
-        const history = Array.isArray(response?.data) ? response.data : []
+        const response = await request.get(`/chat/sessions/${sessionId}`)
+        const history = Array.isArray(response?.messages) ? response.messages : []
 
-        this.messages = history.map((msg) => {
-          let detectionResult = msg.tool_result || null
-          if (typeof detectionResult === 'string') {
+        const restoredMessages = history.map((msg) => {
+          let toolMetadata = msg.tool_result || null
+          if (typeof toolMetadata === 'string') {
             try {
-              detectionResult = JSON.parse(detectionResult)
+              toolMetadata = JSON.parse(toolMetadata)
             } catch {
-              detectionResult = null
+              toolMetadata = null
             }
           }
+
+          const attachments = Array.isArray(toolMetadata?.attachments)
+            ? toolMetadata.attachments.filter(Boolean)
+            : []
+          const isDetectionResult = toolMetadata
+            && typeof toolMetadata === 'object'
+            && !Array.isArray(toolMetadata)
+            && !Array.isArray(toolMetadata.attachments)
+            && (
+              'total_objects' in toolMetadata
+              || 'detections' in toolMetadata
+              || 'annotated_image_base64' in toolMetadata
+              || 'annotated_image_url' in toolMetadata
+              || 'annotated_images' in toolMetadata
+              || toolMetadata.type === 'video'
+            )
+          const detectionResult = isDetectionResult ? toolMetadata : null
+          const isAgentResult = detectionResult && Array.isArray(msg.tool_calls) && msg.tool_calls.length
+          const isVideoMessage = msg.role === 'user' && (
+            msg.content?.startsWith('[视频检测]')
+            || msg.content?.includes('[本轮已上传视频附件]')
+          )
 
           return {
             id: msg.id,
             role: msg.role,
             content: msg.content,
-            type: detectionResult ? 'agent-analysis' : undefined,
+            type: isVideoMessage
+              ? 'video'
+              : attachments.length === 1
+                ? 'image'
+              : detectionResult
+                ? (isAgentResult ? 'agent-analysis' : 'diagnosis')
+                : undefined,
+            imageUrl: !isVideoMessage && attachments.length === 1 ? attachments[0] : undefined,
+            images: !isVideoMessage && attachments.length > 1 ? attachments : undefined,
+            videoUrl: isVideoMessage && attachments.length ? attachments[0] : undefined,
             detectionResult,
             agent_used: msg.agent_used,
             tool_calls: msg.tool_calls,
@@ -137,7 +168,24 @@ export const useAgentStore = defineStore('agent', {
             createdAt: msg.created_at,
           }
         })
-        this.currentSessionId = sessionId
+
+        // 兼容此前保存的 attachments: []：从下一条视频检测结果恢复用户原视频。
+        restoredMessages.forEach((message, index) => {
+          if (message.type !== 'video' || message.videoUrl) return
+
+          const nextUserIndex = restoredMessages.findIndex(
+            (item, itemIndex) => itemIndex > index && item.role === 'user',
+          )
+          const searchEnd = nextUserIndex === -1 ? restoredMessages.length : nextUserIndex
+          const resultMessage = restoredMessages
+            .slice(index + 1, searchEnd)
+            .find((item) => item.detectionResult?.source_video_url)
+
+          if (resultMessage) message.videoUrl = resultMessage.detectionResult.source_video_url
+        })
+
+        this.messages = restoredMessages
+        this.currentSessionId = response?.session?.session_uuid || sessionId
       } catch (error) {
         console.error('加载会话消息失败:', error)
         this.messages = []
@@ -149,7 +197,7 @@ export const useAgentStore = defineStore('agent', {
       try {
         await request.delete(`/chat/sessions/${sessionId}`)
         this.sessions = this.sessions.filter(
-          (session) => String(session.id) !== String(sessionId),
+          (session) => String(this.getSessionKey(session)) !== String(sessionId),
         )
         if (String(this.currentSessionId) === String(sessionId)) this.newChat()
         return true
@@ -159,39 +207,18 @@ export const useAgentStore = defineStore('agent', {
       }
     },
 
-    /** 置顶或取消置顶会话；等待后端提供对应接口 */
-    async togglePinSession(sessionId) {
-      try {
-        const response = await request.put(`/chat/sessions/${sessionId}/pin`)
-        const payload = response?.data ?? response
-        const session = this.sessions.find(
-          (item) => String(item.id) === String(sessionId),
-        )
-
-        if (session) {
-          session.is_pinned = Boolean(payload?.is_pinned)
-          this.sortSessions()
-        }
-        return true
-      } catch (error) {
-        console.error('切换置顶失败:', error)
-        return false
-      }
-    },
-
-    /** 修改会话标题；等待后端提供对应接口 */
+    /** 修改会话标题 */
     async renameSession(sessionId, newTitle) {
       const title = newTitle?.trim()
       if (!title) return false
 
       try {
-        const response = await request.put(`/chat/sessions/${sessionId}/rename`, { title })
-        const payload = response?.data ?? response
+        const response = await request.patch(`/chat/sessions/${sessionId}`, { title })
         const session = this.sessions.find(
-          (item) => String(item.id) === String(sessionId),
+          (item) => String(this.getSessionKey(item)) === String(sessionId),
         )
 
-        if (session) session.title = payload?.title || title
+        if (session) session.title = response?.title || title
         return true
       } catch (error) {
         console.error('重命名会话失败:', error)
@@ -199,18 +226,66 @@ export const useAgentStore = defineStore('agent', {
       }
     },
 
-    /** 会话始终按“置顶优先、最近消息优先”排列 */
+    /** 获取后端对外使用的会话 UUID，并兼容旧数据 */
+    getSessionKey(session) {
+      return session?.session_uuid ?? session?.id ?? null
+    },
+
+    /** 快捷检测前确保存在一个可持久化会话 */
+    async ensureSession() {
+      if (this.currentSessionId) return this.currentSessionId
+
+      try {
+        const session = await request.post('/chat/sessions')
+        const sessionId = this.getSessionKey(session)
+        if (!sessionId) return null
+
+        this.currentSessionId = sessionId
+        this.updateSessionList(session)
+        return sessionId
+      } catch (error) {
+        console.error('创建会话失败:', error)
+        return null
+      }
+    },
+
+    /** 保存绕过 LLM 的快捷检测消息与结果 */
+    async saveQuickDetection({ userContent, assistantContent, detectionResult, attachments = [] }) {
+      const sessionId = await this.ensureSession()
+      if (!sessionId) return false
+
+      try {
+        await request.post(
+          `/chat/sessions/${sessionId}/quick-detection`,
+          {
+            user_content: userContent,
+            assistant_content: assistantContent,
+            detection_result: detectionResult,
+            attachments,
+          },
+          { timeout: 120_000 },
+        )
+        await this.loadSessions()
+        return true
+      } catch (error) {
+        console.error('保存快捷检测历史失败:', error)
+        return false
+      }
+    },
+
+    /** 会话按最近消息时间排列 */
     sortSessions() {
-      this.sessions.sort((a, b) => {
-        if (Boolean(a.is_pinned) !== Boolean(b.is_pinned)) {
-          return a.is_pinned ? -1 : 1
-        }
-        return new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0)
-      })
+      this.sessions.sort(
+        (a, b) => new Date(b.last_message_at || b.created_at || 0)
+          - new Date(a.last_message_at || a.created_at || 0),
+      )
     },
 
     updateSessionList(session) {
-      const index = this.sessions.findIndex((item) => item.id === session.id)
+      const sessionId = this.getSessionKey(session)
+      const index = this.sessions.findIndex(
+        (item) => String(this.getSessionKey(item)) === String(sessionId),
+      )
       if (index >= 0) this.sessions[index] = session
       else this.sessions.unshift(session)
 

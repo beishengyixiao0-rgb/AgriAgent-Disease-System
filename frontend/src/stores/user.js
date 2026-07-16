@@ -4,6 +4,7 @@
  */
 import { defineStore } from 'pinia'
 import { getUserInfoApi, getUserProfileApi, loginApi } from '@/api/auth'
+import { useLocaleStore } from '@/stores/locale'
 
 const TOKEN_KEY = 'rsod_token'
 const USER_KEY = 'rsod_user'
@@ -55,6 +56,9 @@ export const useUserStore = defineStore('user', {
       // 保存用户信息
       this.user = res.user
       localStorage.setItem(USER_KEY, JSON.stringify(res.user))
+      if (res.user?.display_language) {
+        useLocaleStore().applyLocale(res.user.display_language)
+      }
 
       return res
     },
@@ -67,6 +71,7 @@ export const useUserStore = defineStore('user', {
         const user = await getUserInfoApi()
         this.user = user
         localStorage.setItem(USER_KEY, JSON.stringify(user))
+        if (user?.display_language) useLocaleStore().applyLocale(user.display_language)
       } catch {
         this.logout()
       }
@@ -80,6 +85,7 @@ export const useUserStore = defineStore('user', {
         ...profile,
       }
       localStorage.setItem(USER_KEY, JSON.stringify(this.user))
+      if (profile?.display_language) useLocaleStore().applyLocale(profile.display_language)
       return profile
     },
 

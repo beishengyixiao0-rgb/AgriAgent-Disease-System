@@ -12,8 +12,7 @@ import request from "@/utils/request";
  * @returns {Promise}
  */
 export function detectSingle(formData) {
-  return request.post("/training/predict", formData, {
-    headers: { "Content-Type": "multipart/form-data" },
+  return request.post("/detection/single", formData, {
     timeout: 300_000,
   });
 }

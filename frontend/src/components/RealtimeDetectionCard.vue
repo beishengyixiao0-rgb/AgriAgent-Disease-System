@@ -2,8 +2,8 @@
   <div class="realtime-card">
     <div class="realtime-header">
       <div>
-        <div class="realtime-label">WebSocket 实时检测</div>
-        <h3>摄像头实时监测</h3>
+        <div class="realtime-label">{{ tr('realtime.label') }}</div>
+        <h3>{{ tr('realtime.title') }}</h3>
       </div>
       <el-tag :type="statusTagType">{{ statusText }}</el-tag>
     </div>
@@ -20,7 +20,7 @@
         <span class="camera-icon">📹</span>
         <p>
           {{
-            hasStopped ? "实时检测已停止" : "点击下方按钮允许摄像头并开始检测"
+            hasStopped ? tr('realtime.stopped') : tr('realtime.startHint')
           }}
         </p>
       </div>
@@ -33,27 +33,27 @@
       </div>
       <div class="stat-item">
         <strong>{{ inferenceTime }}</strong>
-        <span>推理(ms)</span>
+        <span>{{ tr('realtime.inference') }}</span>
       </div>
       <div class="stat-item">
         <strong>{{ objectCount }}</strong>
-        <span>当前目标</span>
+        <span>{{ tr('realtime.currentTargets') }}</span>
       </div>
       <div class="stat-item">
         <strong>{{ frameCount }}</strong>
-        <span>处理帧</span>
+        <span>{{ tr('realtime.frames') }}</span>
       </div>
     </div>
 
     <div v-if="currentDetections.length" class="current-results">
-      <div class="section-title">当前帧目标</div>
+      <div class="section-title">{{ tr('realtime.frameTargets') }}</div>
       <div
         v-for="(detection, index) in currentDetections"
-        :key="`${detection.class_name || 'target'}-${index}`"
+        :key="`${detection.class_name_display || detection.class_name || 'target'}-${index}`"
         class="detection-row"
       >
         <span>{{
-          detection.class_name || detection.label || `目标 ${index + 1}`
+          detection.class_name_display || detection.class_name_cn || detection.class_name || detection.label || `目标 ${index + 1}`
         }}</span>
         <strong
           >{{
@@ -67,7 +67,7 @@
       v-if="Object.keys(sessionClassCounts).length"
       class="class-distribution"
     >
-      <div class="section-title">本次检测类别累计</div>
+      <div class="section-title">{{ tr('realtime.sessionClasses') }}</div>
       <div class="class-tags">
         <el-tag
           v-for="(count, className) in sessionClassCounts"
@@ -82,19 +82,19 @@
 
     <div class="config-panel">
       <label>
-        推理模式
+        {{ tr('realtime.mode') }}
         <el-select
           v-model="detectMode"
           size="small"
           :disabled="isBusy"
           class="mode-select"
         >
-          <el-option label="CPU 节能" value="cpu" />
-          <el-option label="GPU 加速" value="gpu" />
+          <el-option :label="tr('realtime.cpu')" value="cpu" />
+          <el-option :label="tr('realtime.gpu')" value="gpu" />
         </el-select>
       </label>
       <label class="confidence-config">
-        置信度 {{ confThreshold.toFixed(2) }}
+        {{ tr('realtime.confidence', { value: confThreshold.toFixed(2) }) }}
         <el-slider
           v-model="confThreshold"
           :min="0.1"
@@ -113,15 +113,15 @@
         :disabled="isConnecting"
         @click="startCamera"
       >
-        {{ hasStopped ? "重新开始检测" : "允许摄像头并开始" }}
+        {{ hasStopped ? tr('realtime.restart') : tr('realtime.start') }}
       </el-button>
       <el-button v-else type="danger" @click="stopCamera(true)"
-        >停止并生成总结</el-button
+        >{{ tr('realtime.stop') }}</el-button
       >
     </div>
 
     <p class="permission-hint">
-      摄像头只在当前检测期间使用；离开页面或停止检测后会自动关闭。
+      {{ tr('realtime.permission') }}
     </p>
   </div>
 </template>
@@ -130,6 +130,11 @@
 import { createCameraWs } from "@/utils/cameraWs";
 import { ElMessage } from "element-plus";
 import { computed, onBeforeUnmount, ref } from "vue";
+import { useLocaleStore } from "@/stores/locale";
+import { t } from "@/utils/i18n";
+
+const localeStore = useLocaleStore();
+const tr = (key, params) => t(key, localeStore.locale, params);
 
 const props = defineProps({
   item: {
@@ -265,7 +270,7 @@ function handleDetectionResult(data) {
 
   const nextCounts = { ...sessionClassCounts.value };
   currentDetections.value.forEach((detection) => {
-    const name = detection.class_name || detection.label || "未知目标";
+    const name = detection.class_name_display || detection.class_name_cn || detection.class_name || detection.label || "未知目标";
     nextCounts[name] = (nextCounts[name] || 0) + 1;
   });
   sessionClassCounts.value = nextCounts;

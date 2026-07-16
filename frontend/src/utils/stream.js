@@ -40,6 +40,7 @@ export function streamChat(url, body, callbacks = {}) {
   const { onMessage, onDone, onError } = callbacks;
 
   const token = localStorage.getItem("rsod_token");
+  const displayLanguage = localStorage.getItem("rsod_locale") === "en" ? "en" : "zh";
 
   const controller = new AbortController();
 
@@ -52,6 +53,7 @@ export function streamChat(url, body, callbacks = {}) {
             Authorization: `Bearer ${token}`,
           }
         : {}),
+      "X-Display-Language": displayLanguage,
     },
     body: JSON.stringify(body),
     signal: controller.signal,

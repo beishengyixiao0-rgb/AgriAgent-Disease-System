@@ -3,29 +3,27 @@
     <router-link to="/" class="brand"> 🌿 AgriAgent </router-link>
 
     <button class="new-chat" @click="$emit('new-diagnosis')">
-      ＋ 新建诊断
+      ＋ {{ tr('sidebar.newDiagnosis') }}
     </button>
 
-    <div class="sidebar-section-title">最近会话</div>
+    <div class="sidebar-section-title">{{ tr('sidebar.recent') }}</div>
 
     <div class="session-list">
       <div
         v-for="session in sessions"
-        :key="session.id"
+        :key="sessionKey(session)"
         class="session-item"
         :class="{
-          active: String(currentSessionId) === String(session.id),
-          pinned: session.is_pinned,
+          active: String(currentSessionId) === String(sessionKey(session)),
         }"
-        :data-session-id="session.id"
-        @click="$emit('select-session', session.id)"
+        :data-session-id="sessionKey(session)"
+        @click="$emit('select-session', sessionKey(session))"
       >
         <div class="session-content">
-          <span v-if="session.is_pinned" class="pin-icon">📌</span>
-          <span class="session-title">{{ session.title || "新对话" }}</span>
+          <span class="session-title">{{ session.title || tr('sidebar.newChat') }}</span>
         </div>
         <div class="session-meta">
-          <span class="session-count">{{ session.message_count ?? 0 }} 条消息</span>
+          <span class="session-count">{{ tr('sidebar.messageCount', { count: session.message_count ?? 0 }) }}</span>
           <span class="session-time">{{
             formatTime(session.last_message_at)
           }}</span>
@@ -33,9 +31,9 @@
         <button
           class="more-btn"
           type="button"
-          title="更多操作"
-          aria-label="更多会话操作"
-          @click.stop="toggleMenu(session.id, $event)"
+          :title="tr('sidebar.more')"
+          :aria-label="tr('sidebar.more')"
+          @click.stop="toggleMenu(sessionKey(session), $event)"
         >
           ⋯
         </button>
@@ -43,19 +41,19 @@
 
       <div v-if="sessions.length === 0" class="empty-sessions">
         <div class="empty-icon">💬</div>
-        <div class="empty-text">暂无会话记录</div>
+        <div class="empty-text">{{ tr('sidebar.empty') }}</div>
       </div>
     </div>
 
     <div class="sidebar-bottom">
-      <div class="sidebar-section-title">功能导航</div>
+      <div class="sidebar-section-title">{{ tr('sidebar.navigation') }}</div>
 
       <router-link
         to="/ai-chat"
         class="nav-item"
         active-class="nav-item-active"
       >
-        🤖 智能诊断
+        🤖 {{ tr('sidebar.smartDiagnosis') }}
       </router-link>
 
       <router-link
@@ -63,7 +61,7 @@
         class="nav-item"
         active-class="nav-item-active"
       >
-        📊 数据分析
+        📊 {{ tr('sidebar.analytics') }}
       </router-link>
 
       <router-link
@@ -71,7 +69,7 @@
         class="nav-item"
         active-class="nav-item-active"
       >
-        🕒 检测历史
+        🕒 {{ tr('sidebar.detectionHistory') }}
       </router-link>
     </div>
   </aside>
@@ -84,14 +82,11 @@
       @click.stop
     >
       <button type="button" class="dropdown-item" @click="handleRename">
-        ✏️ 重命名
-      </button>
-      <button type="button" class="dropdown-item" @click="handleTogglePin">
-        {{ isCurrentPinned ? "📌 取消置顶" : "📌 置顶" }}
+        ✏️ {{ tr('sidebar.rename') }}
       </button>
       <div class="dropdown-divider"></div>
       <button type="button" class="dropdown-item danger" @click="handleDelete">
-        🗑️ 删除
+        🗑️ {{ tr('sidebar.delete') }}
       </button>
     </div>
   </Teleport>
@@ -103,7 +98,7 @@
       v-model="editTitle"
       class="session-rename-input"
       maxlength="200"
-      aria-label="修改会话名称"
+      :aria-label="tr('sidebar.renameAria')"
       @blur="saveEdit"
       @keyup.enter="saveEdit"
       @keyup.esc="cancelEdit"
@@ -113,6 +108,11 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
+import { useLocaleStore } from '@/stores/locale'
+import { t } from '@/utils/i18n'
+
+const localeStore = useLocaleStore()
+const tr = (key, params) => t(key, localeStore.locale, params)
 
 const props = defineProps({
   sessions: {
@@ -128,7 +128,6 @@ const props = defineProps({
 const emit = defineEmits([
   'new-diagnosis',
   'select-session',
-  'toggle-pin',
   'delete-session',
   'rename-session',
 ])
@@ -140,10 +139,10 @@ const menuPosition = ref({ x: 0, y: 0 })
 const editInputRef = ref(null)
 
 const activeSession = computed(() => props.sessions.find(
-  (session) => String(session.id) === String(activeMenuSessionId.value),
+  (session) => String(sessionKey(session)) === String(activeMenuSessionId.value),
 ))
 
-const isCurrentPinned = computed(() => Boolean(activeSession.value?.is_pinned))
+const sessionKey = (session) => session?.session_uuid ?? session?.id
 
 const dropdownStyle = computed(() => ({
   left: `${menuPosition.value.x}px`,
@@ -159,11 +158,11 @@ const formatTime = (timestamp) => {
   const hours = Math.floor(diff / 3600000);
   const days = Math.floor(diff / 86400000);
 
-  if (minutes < 1) return "刚刚";
-  if (minutes < 60) return `${minutes}分钟前`;
-  if (hours < 24) return `${hours}小时前`;
-  if (days < 7) return `${days}天前`;
-  return date.toLocaleDateString("zh-CN");
+  if (minutes < 1) return tr('time.now');
+  if (minutes < 60) return tr('time.minutesAgo', { count: minutes });
+  if (hours < 24) return tr('time.hoursAgo', { count: hours });
+  if (days < 7) return tr('time.daysAgo', { count: days });
+  return date.toLocaleDateString(localeStore.locale === 'en' ? 'en-US' : 'zh-CN');
 }
 
 const closeMenu = () => {
@@ -223,16 +222,10 @@ const saveEdit = () => {
   cancelEdit()
 }
 
-const handleTogglePin = () => {
-  const sessionId = activeMenuSessionId.value
-  if (sessionId !== null) emit('toggle-pin', sessionId)
-  closeMenu()
-}
-
 const handleDelete = () => {
   const sessionId = activeMenuSessionId.value
   closeMenu()
-  if (sessionId !== null && window.confirm('确定要删除这个会话吗？')) {
+  if (sessionId !== null && window.confirm(tr('sidebar.deleteConfirm'))) {
     emit('delete-session', sessionId)
   }
 }
@@ -308,20 +301,11 @@ onBeforeUnmount(() => {
   border-color: #16a34a;
 }
 
-.session-item.pinned {
-  border-left: 3px solid #f59e0b;
-}
-
 .session-content {
   display: flex;
   align-items: center;
   gap: 6px;
   padding-right: 26px;
-}
-
-.pin-icon {
-  flex-shrink: 0;
-  font-size: 12px;
 }
 
 .session-title {

@@ -2,7 +2,7 @@
   <div class="diagnosis-card">
     <div class="diagnosis-header">
       <div>
-        <div class="diagnosis-label">{{ hasApiResult ? 'YOLO检测结果' : 'Detected Disease' }}</div>
+        <div class="diagnosis-label">{{ hasApiResult ? tr('result.yolo') : tr('result.detectedDisease') }}</div>
         <h3>{{ diseaseName }}</h3>
         <p>{{ plantName }}</p>
       </div>
@@ -15,19 +15,19 @@
     <div v-if="hasApiResult && !isVideoResult" class="result-summary">
       <div class="summary-item">
         <strong>{{ totalObjects }}</strong>
-        <span>检测目标</span>
+        <span>{{ tr('result.targetCount') }}</span>
       </div>
       <div class="summary-item">
         <strong>{{ categoryCount }}</strong>
-        <span>类别数量</span>
+        <span>{{ tr('result.classCount') }}</span>
       </div>
       <div class="summary-item">
         <strong>{{ inferenceTime }}</strong>
-        <span>推理耗时</span>
+        <span>{{ tr('result.inferenceTime') }}</span>
       </div>
       <div v-if="isBatchResult" class="summary-item">
         <strong>{{ resultData.total_images ?? batchImages.length }}</strong>
-        <span>图片数量</span>
+        <span>{{ tr('result.imageCount') }}</span>
       </div>
     </div>
 
@@ -57,15 +57,15 @@
     <!-- 视频检测结果：优先播放标注视频，缺失时展示关键帧 -->
     <div v-if="isVideoResult" class="video-result">
       <div class="video-info">
-        <el-tag type="info">时长：{{ resultData.duration_seconds ?? 0 }}s</el-tag>
-        <el-tag type="info">FPS：{{ resultData.fps ?? 0 }}</el-tag>
-        <el-tag type="info">总帧：{{ resultData.total_frames ?? 0 }}</el-tag>
-        <el-tag type="info">处理帧：{{ resultData.processed_frames ?? 0 }}</el-tag>
+        <el-tag type="info">{{ tr('video.duration', { value: resultData.duration_seconds ?? 0 }) }}</el-tag>
+        <el-tag type="info">{{ tr('video.fps', { value: resultData.fps ?? 0 }) }}</el-tag>
+        <el-tag type="info">{{ tr('video.totalFrames', { count: resultData.total_frames ?? 0 }) }}</el-tag>
+        <el-tag type="info">{{ tr('video.processedFrames', { count: resultData.processed_frames ?? 0 }) }}</el-tag>
         <el-tag v-if="resultData.sampled_frames != null" type="info">
-          采样帧：{{ resultData.sampled_frames }}
+          {{ tr('video.sampledFrames', { count: resultData.sampled_frames }) }}
         </el-tag>
-        <el-tag v-if="videoResolution" type="info">分辨率：{{ videoResolution }}</el-tag>
-        <el-tag type="success">目标：{{ totalObjects }}</el-tag>
+        <el-tag v-if="videoResolution" type="info">{{ tr('video.resolution', { value: videoResolution }) }}</el-tag>
+        <el-tag type="success">{{ tr('video.targets', { count: totalObjects }) }}</el-tag>
       </div>
 
       <div v-if="annotatedVideoUrl && !videoPlaybackFailed" class="video-player">
@@ -79,7 +79,7 @@
       </div>
 
       <div v-if="videoPlaybackFailed" class="video-playback-warning">
-        <strong>浏览器无法播放标注视频</strong>
+        <strong>{{ tr('video.playbackUnsupported') }}</strong>
         <span>{{ videoPlaybackError }}</span>
         <a
           v-if="annotatedVideoUrl"
@@ -87,7 +87,7 @@
           target="_blank"
           rel="noopener noreferrer"
         >
-          在新窗口打开视频
+          {{ tr('video.openWindow') }}
         </a>
       </div>
 
@@ -96,7 +96,7 @@
         class="frames-fallback"
       >
         <p class="fallback-hint">
-          {{ videoPlaybackFailed ? '视频播放失败，已切换为关键帧预览：' : '标注视频生成中或上传失败，以下为关键帧预览：' }}
+          {{ videoPlaybackFailed ? tr('video.fallbackFailed') : tr('video.fallbackGenerating') }}
         </p>
 
         <div class="frames-container">
@@ -109,12 +109,12 @@
           >
             <img
               :src="getVideoFrameImage(frame)"
-              :alt="`帧 ${frame.frame_index ?? index + 1}`"
+              :alt="tr('video.frame', { index: frame.frame_index ?? index + 1 })"
             />
 
             <span class="frame-info">
               <span>{{ frame.timestamp ?? 0 }}s</span>
-              <span>{{ frame.object_count ?? frame.detections?.length ?? 0 }} 个目标</span>
+              <span>{{ tr('result.targetsWithCount', { count: frame.object_count ?? frame.detections?.length ?? 0 }) }}</span>
             </span>
           </button>
         </div>
@@ -124,17 +124,17 @@
         v-if="!annotatedVideoUrl && !thumbnailFrames.length"
         class="video-output-missing"
       >
-        检测任务已经完成，但后端暂未返回标注视频或可预览的关键帧。
+        {{ tr('video.outputMissing') }}
       </div>
 
       <div class="result-stats">
         <div class="stat-item">
-          <span class="stat-label">推理耗时</span>
+          <span class="stat-label">{{ tr('result.inferenceTime') }}</span>
           <span class="stat-value">{{ inferenceTime }}</span>
         </div>
         <div class="stat-item">
-          <span class="stat-label">检测目标</span>
-          <span class="stat-value">{{ totalObjects }} 个</span>
+          <span class="stat-label">{{ tr('result.targetCount') }}</span>
+          <span class="stat-value">{{ tr('result.targetsWithCount', { count: totalObjects }) }}</span>
         </div>
 
         <el-table
@@ -143,15 +143,15 @@
           size="small"
           class="class-count-table"
         >
-          <el-table-column prop="className" label="类别" />
-          <el-table-column prop="count" label="数量" width="80" />
+          <el-table-column prop="className" :label="tr('result.category')" />
+          <el-table-column prop="count" :label="tr('result.quantity')" width="80" />
         </el-table>
       </div>
     </div>
 
     <!-- 批量检测：逐张展示后端返回的标注图片 -->
     <div v-if="isBatchResult && batchImages.length" class="batch-results-section">
-      <div class="section-title">逐图检测结果（{{ batchImages.length }}）</div>
+      <div class="section-title">{{ tr('result.perImage', { count: batchImages.length }) }}</div>
       <div class="batch-results-grid">
         <button
           v-for="(image, index) in batchImages"
@@ -163,7 +163,7 @@
           <img :src="image.src" :alt="`${image.name} 检测结果`" />
           <span class="batch-result-info">
             <strong :title="image.name">{{ image.name }}</strong>
-            <span>{{ image.objectCount }} 个目标</span>
+            <span>{{ tr('result.targetsWithCount', { count: image.objectCount }) }}</span>
             <span v-if="image.inferenceTime !== null">{{ image.inferenceTime }} ms</span>
           </span>
         </button>
@@ -183,7 +183,7 @@
     </div>
 
     <div v-if="classCountItems.length && !isVideoResult" class="class-summary">
-      <div class="section-title">类别统计</div>
+      <div class="section-title">{{ tr('result.classStats') }}</div>
       <div class="class-tags">
         <span v-for="item in classCountItems" :key="item.name" class="class-tag">
           {{ item.name }} <strong>{{ item.count }}</strong>
@@ -192,7 +192,7 @@
     </div>
 
     <div v-if="detections.length" class="detection-list">
-      <div class="section-title">检测目标（{{ totalObjects }}）</div>
+      <div class="section-title">{{ tr('result.targetsWithCount', { count: totalObjects }) }}</div>
       <div v-for="(detection, index) in detections" :key="index" class="detection-item">
         <div class="detection-main">
           <span class="detection-index">#{{ index + 1 }}</span>
@@ -209,7 +209,7 @@
     </div>
 
     <details v-if="hasBoundingBoxes" class="technical-details">
-      <summary>查看检测框坐标</summary>
+      <summary>{{ tr('result.technicalDetails') }}</summary>
       <div v-for="(detection, index) in detections" :key="index" class="bbox-row">
         <span>#{{ index + 1 }} {{ getDetectionName(detection, index) }}</span>
         <code>{{ formatBoundingBox(detection.bbox) }}</code>
@@ -227,8 +227,8 @@
     </div>
 
     <div v-if="hasApiResult" class="result-meta">
-      <span v-if="resultData.task_uuid">模型任务：{{ resultData.task_uuid }}</span>
-      <span v-if="resultData.filename">输入文件：{{ resultData.filename }}</span>
+      <span v-if="resultData.task_uuid">{{ tr('result.modelTask', { id: resultData.task_uuid }) }}</span>
+      <span v-if="resultData.filename">{{ tr('result.inputFile', { name: resultData.filename }) }}</span>
     </div>
 
     <div
@@ -236,12 +236,12 @@
       class="frame-preview-modal"
       role="dialog"
       aria-modal="true"
-      :aria-label="previewImageTitle || '检测图片预览'"
+      :aria-label="previewImageTitle || tr('result.previewImage')"
       @click.self="closeVideoFramePreview"
     >
       <button type="button" class="preview-close" @click="closeVideoFramePreview">×</button>
       <div class="preview-content">
-        <img :src="previewFrameUrl" :alt="previewImageTitle || '检测图片预览'" />
+        <img :src="previewFrameUrl" :alt="previewImageTitle || tr('result.previewImage')" />
         <div v-if="previewImageTitle" class="preview-title">{{ previewImageTitle }}</div>
       </div>
     </div>
@@ -251,6 +251,11 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { useLocaleStore } from '@/stores/locale'
+import { t } from '@/utils/i18n'
+
+const localeStore = useLocaleStore()
+const tr = (key, params) => t(key, localeStore.locale, params)
 
 const props = defineProps({
   item: {
@@ -291,7 +296,7 @@ const totalObjects = computed(() => (
 ))
 
 const classCountItems = computed(() => {
-  const counts = resultData.value.class_counts
+  const counts = resultData.value.class_counts_display || resultData.value.class_counts
   if (counts && typeof counts === 'object') {
     return Object.entries(counts).map(([name, count]) => ({ name, count }))
   }
@@ -319,10 +324,14 @@ const hasBoundingBoxes = computed(() => detections.value.some((item) => Array.is
 const firstDetection = computed(() => detections.value[0] || {})
 const diseaseName = computed(() => (
   props.item.disease
+  || firstDetection.value.class_name_display
+  || firstDetection.value.class_name_cn
   || firstDetection.value.class_name
   || firstDetection.value.disease_name
   || firstDetection.value.label
-  || (hasApiResult.value ? `检测完成，共 ${totalObjects.value} 个目标` : '未知病害')
+  || (hasApiResult.value
+    ? tr('result.completeCount', { count: totalObjects.value })
+    : tr('result.unknownDisease'))
 ))
 const plantName = computed(() => (
   props.item.plant
@@ -351,8 +360,8 @@ const annotatedImage = computed(() => (
   || resultData.value.annotated_image_url
   || resultData.value.result_image_url
   || resultData.value.image_url
-  || (resultData.value.annotated_image
-    ? `data:image/jpeg;base64,${resultData.value.annotated_image}`
+  || (resultData.value.annotated_image_base64 || resultData.value.annotated_image
+    ? `data:image/jpeg;base64,${resultData.value.annotated_image_base64 || resultData.value.annotated_image}`
     : '')
   || ''
 ))
@@ -374,7 +383,16 @@ const videoFrames = computed(() => (
 const previewFrameUrl = ref('')
 const previewImageTitle = ref('')
 const videoPlaybackFailed = ref(false)
-const videoPlaybackError = ref('视频地址不可访问，或视频编码不受当前浏览器支持。')
+const videoPlaybackErrorCode = ref(0)
+const videoPlaybackError = computed(() => {
+  const key = {
+    1: 'video.errorAborted',
+    2: 'video.errorNetwork',
+    3: 'video.errorDecode',
+    4: 'video.errorFormat',
+  }[videoPlaybackErrorCode.value] || 'video.errorDefault'
+  return tr(key)
+})
 
 const getBaseName = (path = '') => String(path).split(/[\\/]/).pop() || ''
 
@@ -444,21 +462,13 @@ const videoResolution = computed(() => {
 
 const handleVideoPlaybackError = (event) => {
   const mediaError = event?.target?.error
-  const errorMessages = {
-    1: '视频加载被中止。',
-    2: '读取视频时发生网络错误，请检查 MinIO 地址。',
-    3: '视频文件无法解码，后端需要输出 H.264 编码。',
-    4: '当前浏览器不支持该视频格式或编码。',
-  }
-
-  videoPlaybackError.value = errorMessages[mediaError?.code]
-    || '视频地址不可访问，或视频编码不受当前浏览器支持。'
+  videoPlaybackErrorCode.value = mediaError?.code || 0
   videoPlaybackFailed.value = true
 }
 
 const previewVideoFrame = (frame) => {
   previewFrameUrl.value = getVideoFrameImage(frame)
-  previewImageTitle.value = `关键帧 ${frame.frame_index ?? ''}`.trim()
+  previewImageTitle.value = tr('video.keyFrame', { index: frame.frame_index ?? '' }).trim()
 }
 
 const previewBatchImage = (image) => {
@@ -472,7 +482,9 @@ const closeVideoFramePreview = () => {
 }
 
 const getDetectionName = (detection, index) => (
-  detection.class_name
+  detection.class_name_display
+  || detection.class_name_cn
+  || detection.class_name
   || detection.disease_name
   || detection.label
   || detection.name

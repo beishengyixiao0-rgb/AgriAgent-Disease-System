@@ -4,9 +4,9 @@
       <div>
         <div class="diagnosis-label">
           <el-icon><DataAnalysis /></el-icon>
-          {{ isBatch ? 'YOLO 批量检测结果' : 'YOLO 检测结果' }}
+          {{ isBatch ? tr('result.batchTitle') : tr('result.singleTitle') }}
         </div>
-        <h3>检测结果：{{ detectedCategoryText }}</h3>
+        <h3>{{ tr('result.result', { categories: detectedCategoryText }) }}</h3>
         <p>{{ resultSourceText }}</p>
       </div>
       <div class="batch-badge">{{ isBatch ? 'Batch' : 'Single' }}</div>
@@ -15,35 +15,35 @@
     <div class="result-summary">
       <div class="summary-item">
         <strong>{{ result.total_objects ?? 0 }}</strong>
-        <span>检测目标</span>
+        <span>{{ tr('result.targetCount') }}</span>
       </div>
       <div class="summary-item">
         <strong>{{ classCountsArray.length }}</strong>
-        <span>类别数量</span>
+        <span>{{ tr('result.classCount') }}</span>
       </div>
       <div class="summary-item">
         <strong>{{ result.inference_time || result.total_inference_time || 0 }} ms</strong>
-        <span>推理耗时</span>
+        <span>{{ tr('result.inferenceTime') }}</span>
       </div>
       <div class="summary-item">
         <strong>{{ result.total_images ?? batchImages.length }}</strong>
-        <span>图片数量</span>
+        <span>{{ tr('result.imageCount') }}</span>
       </div>
     </div>
 
     <div class="card-body">
       <!-- 单图模式：标注图 -->
       <div class="result-image" v-if="annotatedImageSrc && !isBatch">
-        <img :src="annotatedImageSrc" alt="检测标注图" @click="previewSingleImage" />
+        <img :src="annotatedImageSrc" :alt="tr('result.preview')" @click="previewSingleImage" />
       </div>
 
       <!-- 批量模式：多图展示 -->
       <div v-if="isBatch && batchImages.length > 0" class="batch-result-section">
-        <div class="section-title">逐图检测结果（{{ batchImages.length }}）</div>
+        <div class="section-title">{{ tr('result.perImage', { count: batchImages.length }) }}</div>
         <div class="result-images-grid">
           <div v-for="(img, index) in batchImages" :key="`${img.name}-${index}`" class="grid-image" @click="previewImage(img)">
             <img :src="img.src" :alt="img.name" @error="markImageError(img)" />
-            <span v-if="img.loadError" class="image-error">标注图加载失败</span>
+            <span v-if="img.loadError" class="image-error">{{ tr('result.imageFailed') }}</span>
             <span class="image-name">{{ img.name }}</span>
           </div>
         </div>
@@ -51,7 +51,7 @@
     </div>
 
     <div v-if="classCountsArray.length" class="class-summary">
-      <div class="section-title">类别统计</div>
+      <div class="section-title">{{ tr('result.classStats') }}</div>
       <div class="class-tags">
         <span v-for="item in classCountsArray" :key="item.className" class="class-tag">
           {{ item.className }} <strong>{{ item.count }}</strong>
@@ -60,13 +60,13 @@
     </div>
 
     <div class="result-meta">
-      <span v-if="result.task_id">检测任务：{{ result.task_id }}</span>
-      <span v-if="result.source">来源：{{ result.source }}</span>
+      <span v-if="result.task_id">{{ tr('result.task', { id: result.task_id }) }}</span>
+      <span v-if="result.source">{{ tr('result.source', { source: result.source }) }}</span>
     </div>
 
     <!-- 全屏图片预览 -->
-    <el-dialog v-model="showFullImage" title="检测标注图" width="80%">
-      <img v-if="previewSrc" :src="previewSrc" style="width: 100%" alt="检测标注图" />
+    <el-dialog v-model="showFullImage" :title="tr('result.preview')" width="80%">
+      <img v-if="previewSrc" :src="previewSrc" style="width: 100%" :alt="tr('result.preview')" />
     </el-dialog>
   </div>
 </template>
@@ -82,6 +82,11 @@
  */
 import { DataAnalysis } from '@element-plus/icons-vue'
 import { computed, ref } from 'vue'
+import { useLocaleStore } from '@/stores/locale'
+import { t } from '@/utils/i18n'
+
+const localeStore = useLocaleStore()
+const tr = (key, params) => t(key, localeStore.locale, params)
 
 const props = defineProps({
   result: { type: Object, required: true },
@@ -139,7 +144,9 @@ function markImageError(img) {
 }
 
 /** 类别统计转为数组（用于 el-table） */
-const classCountsArray = computed(() => Object.entries(props.result.class_counts || {}).map(([className, count]) => ({ className, count })))
+const classCountsArray = computed(() => Object.entries(
+  props.result.class_counts_display || props.result.class_counts || {},
+).map(([className, count]) => ({ className, count })))
 
 /** 标题直接展示实际检测类别；class_counts 缺失时从检测明细中提取。 */
 const detectedCategoryText = computed(() => {
@@ -147,19 +154,19 @@ const detectedCategoryText = computed(() => {
 
   if (!categoryNames.length && Array.isArray(props.result.detections)) {
     props.result.detections.forEach((detection) => {
-      const name = detection.class_name || detection.disease_name || detection.label || detection.name
+      const name = detection.class_name_display || detection.class_name_cn || detection.class_name || detection.disease_name || detection.label || detection.name
       if (name && !categoryNames.includes(name)) categoryNames.push(name)
     })
   }
 
   if (categoryNames.length) return categoryNames.join('、')
-  return (props.result.total_objects ?? 0) > 0 ? '目标类别待确认' : '未检测到目标'
+  return (props.result.total_objects ?? 0) > 0 ? tr('result.pendingCategory') : tr('result.noTarget')
 })
 
 const resultSourceText = computed(() => {
-  if (props.result.source === 'zip') return props.result.zip_filename || 'ZIP 批量检测'
-  if (isBatch.value) return '多图片批量检测'
-  return props.result.filename || '单图片检测'
+  if (props.result.source === 'zip') return props.result.zip_filename || tr('result.zipSource')
+  if (isBatch.value) return tr('result.batchSource')
+  return props.result.filename || tr('result.singleSource')
 })
 </script>
 
