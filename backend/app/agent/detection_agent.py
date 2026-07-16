@@ -1,26 +1,22 @@
 """
-检测智能体 — ReAct Agent + 检测工具绑定
+检测智能体（Day 11 升级版）— 多工具 Agent + 增强 SSE + 双语支持
 
-职责：
-  -. 创建 LangChain ReAct Agent
-  - 绑定检测相关工具（单图/批量/ZIP）
-  - 处理 SSE 流式输出 Agent 的思考过程和结果
+升级内容（相比 Day 8）：
+  1. Prompt 模板外置到 prompts.py（支持中英双语）
+  2. 工具从 4 个扩展到 8 个（检测 4 + RAG 1 + 统计 2 + 用户 1）
+  3. SSE 事件协议增强（thinking/tool_start/tool_end/done/error）
+  4. 支持用户语言偏好，从数据库获取
+  5. 支持对话记忆和历史记录
 
 架构：
-  用户消息 → Agent（LLM 决策）→ 调用 DetectionTool → 返回 结果
-
-使用方式：
-  from app.agent.detection_agent import DetectionAgent
-
-  agent = DetectionAgent()
-  response = await agent.chat("检测这张图片", image_path="xxx.jpg")
+  用户消息 → Agent（LLM + 8 工具）→ 调用工具 → SSE 流式返回
 """
 
-import asyncio
-import contextvars
 import json
 from pathlib import Path
 from typing import AsyncGenerator
+
+import contextvars
 
 import httpx
 from app.config.settings import settings
@@ -31,12 +27,20 @@ from app.services.chat_history_service import chat_history_service
 from langchain.agents import AgentExecutor, create_openai_tools_agent
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.tools import tool
-from langchain_openai import ChatOpenAI
+
+from app.agent.prompts import (
+    DETECTION_AGENT_SYSTEM_PROMPT_CN,
+    DETECTION_AGENT_SYSTEM_PROMPT_EN,
+)
+from app.agent.memory import conversation_memory
+from app.agent.tools.analysis_tool import ANALYSIS_TOOLS
+from app.agent.tools.detection_tool import DETECTION_TOOLS
+from app.config.settings import settings
+from app.core.logger import get_logger
+from app.services.chat_history_service import chat_history_service
 
 logger = get_logger(__name__)
 
-# Tool 函数没有 HTTP 请求上下文，使用 ContextVar 安全传递当前用户和场景。
 _tool_user_id: contextvars.ContextVar[int | None] = contextvars.ContextVar(
     "tool_user_id", default=None
 )
@@ -174,57 +178,36 @@ DETECTION_TOOLS = [
 
 
 def create_llm():
-    """
-    根据配置创建 LLM 实例
-
-    支持三种 LLM 后端：
-      1. 通义千问（Qwen，通过 OpenAI 兼容接口）
-      2. OpenAI（GPT-4o-mini）
-      3. Ollama 本地部署
-
-    本项目按当前要求只启用通义千问。指导书中的 ChatOpenAI 是 LangChain
-    对 OpenAI 兼容协议的客户端类名；本项目只传入 DashScope 地址，不调用 OpenAI 服务。
-    """
-    # 优先使用通义千问（国内访问快，有免费额度）
     qwen_api_key = getattr(settings, "QWEN_API_KEY", "")
-    api_key = qwen_api_key
-    base_url = getattr(
-        settings, "QWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    )
-    model_name = getattr(settings, "QWEN_MODEL", "qwen-plus")
+    if qwen_api_key and qwen_api_key != "sk-your-qwen-api-key":
+        api_key = qwen_api_key
+        base_url = getattr(
+            settings, "QWEN_BASE_URL",
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        )
+        model_name = getattr(settings, "QWEN_MODEL", "qwen3.7-plus")
+    else:
+        api_key = getattr(settings, "OPENAI_API_KEY", "")
+        base_url = getattr(settings, "OPENAI_BASE_URL", "https://api.openai.com/v1")
+        model_name = getattr(settings, "OPENAI_MODEL", "gpt-4o-mini")
 
-    # 未配置 Key 时不初始化远程客户端，后续由本地 Tool 降级链路处理。
-    if not api_key:
-        return None
-
-    # DashScope 可直接访问。默认忽略系统代理，防止失效代理在 TLS 握手时中断请求；
-    # 如部署网络必须经代理，可通过 QWEN_PROXY 显式配置。
-    proxy = getattr(settings, "QWEN_PROXY", "").strip() or None
-    async_http_client = httpx.AsyncClient(
-        proxy=proxy,
-        timeout=httpx.Timeout(60.0, connect=15.0),
-        trust_env=False,
-    )
+    from langchain_openai import ChatOpenAI
     return ChatOpenAI(
         model=model_name,
-        api_key=api_key,
-        base_url=base_url,
-        temperature=0.1,  # 低温度，减少随机性，检测结果需要确定性
-        http_async_client=async_http_client,
+        openai_api_key=api_key,
+        openai_api_base=base_url,
+        temperature=0.1,
     )
-
-
-# ══════════════════════════════════════════════════════════════
-# 三、创建 ReAct Agent
-# ══════════════════════════════════════════════════════════════
 
 
 class DetectionAgent:
-    """检测智能体 — 封装 ReAct Agent 创建和对话逻辑"""
+    """检测智能体（Day 11 升级版）"""
 
     def __init__(self):
-        """初始化 Agent，创建 LLM 和 AgentExecutor"""
         self.llm = create_llm()
+        self.all_tools = DETECTION_TOOLS + ANALYSIS_TOOLS
+
+        system_prompt = DETECTION_AGENT_SYSTEM_PROMPT_CN
         self.executor = None
         if self.llm is None:
             logger.info("未配置 LLM API Key，DetectionAgent 使用本地检测降级模式")
@@ -263,31 +246,33 @@ class DetectionAgent:
             ]
         )
 
-        # 创建 OpenAI Tools Agent（与 ChatPromptTemplate + MessagesPlaceholder 完全兼容）
-        # 实际使用 Qwen 的 OpenAI 兼容协议。
-        agent = create_openai_tools_agent(
-            llm=self.llm,
-            tools=DETECTION_TOOLS,
-            prompt=prompt,
+        try:
+            agent = create_openai_tools_agent(
+                llm=self.llm,
+                tools=self.all_tools,
+                prompt=prompt,
+            )
+            self.executor = AgentExecutor(
+                agent=agent,
+                tools=self.all_tools,
+                verbose=True,
+                max_iterations=8,
+                return_intermediate_steps=True,
+            )
+        except Exception as e:
+            logger.error("Agent 创建失败，降级为无 LLM 模式: %s", e)
+            self.executor = None
+
+        logger.info(
+            "DetectionAgent 初始化完成，绑定 %d 个工具（检测 %d + 分析 %d）",
+            len(self.all_tools),
+            len(DETECTION_TOOLS),
+            len(ANALYSIS_TOOLS),
         )
 
-        self.executor = AgentExecutor(
-            agent=agent,
-            tools=DETECTION_TOOLS,
-            verbose=True,  # 开发阶段开启，可查看 Agent 思考过程
-            max_iterations=5,  # 限制循环次数，防止无限循环
-            return_intermediate_steps=True,  # 返回中间步骤（Tool 调用记录）
-        )
-
-        logger.info("DetectionAgent 初始化完成，绑定 %d 个工具", len(DETECTION_TOOLS))
-
-    @staticmethod
     def _attachment_message(
-        message: str,
-        image_path: str | None = None,
-        image_paths: list[str] | None = None,
+        self, message: str, image_path: str | None = None, image_paths: list[str] | None = None
     ) -> tuple[str, list[str]]:
-        """标准化单附件和多附件输入，并生成供 Agent 读取的路径提示。"""
         attachment_paths = image_paths or ([image_path] if image_path else [])
         if len(attachment_paths) == 1:
             label = "视频" if _is_video_path(attachment_paths[0]) else "图片"
@@ -298,6 +283,27 @@ class DetectionAgent:
             return f"{message}\n[附件{label}路径列表: {paths_json}]", attachment_paths
         return message, attachment_paths
 
+    @staticmethod
+    def _message_for_history(message: str, attachment_paths: list[str]) -> str:
+        if not attachment_paths:
+            return message
+        if len(attachment_paths) == 1:
+            attachment_label = "视频" if _is_video_path(attachment_paths[0]) else "图片"
+            return f"{message}\n[本轮已上传{attachment_label}附件]"
+        return f"{message}\n[本轮已上传 {len(attachment_paths)} 个图片附件]"
+
+    @staticmethod
+    def _to_langchain_messages(history: list[dict]) -> list:
+        messages = []
+        for item in history:
+            content = item.get("content", "")
+            if not content:
+                continue
+            if item.get("role") in ("assistant", "ai"):
+                messages.append(AIMessage(content=content))
+            else:
+                messages.append(HumanMessage(content=content))
+        return messages
     async def chat(
         self,
         message: str,
@@ -308,13 +314,76 @@ class DetectionAgent:
         """
         处理用户对话消息
 
-        Args:
-            message: 用户文本消息
-            image_path: 附带的图片路径（可选）
+    @staticmethod
+    def _tool_output_text(tool_output) -> str:
+        if isinstance(tool_output, str):
+            return tool_output
+        content = getattr(tool_output, "content", None)
+        if isinstance(content, str):
+            return content
+        return str(tool_output) if tool_output is not None else ""
 
-        Returns:
-            Agent 响应字典
-        """
+    @staticmethod
+    def _compact_tool_results(tool_results: list[str]) -> str | None:
+        if not tool_results:
+            return None
+
+        latest_detection_result = None
+        fallback_results = []
+        for result in tool_results:
+            try:
+                data = json.loads(result)
+                if not isinstance(data, dict):
+                    continue
+                for frame in data.get("key_frames", []):
+                    if data.get("annotated_video_url"):
+                        frame.pop("annotated_image_base64", None)
+                        frame.pop("source_image_base64", None)
+                if (
+                    data.get("type") == "video"
+                    or "detections" in data
+                    or "annotated_image_base64" in data
+                    or "annotated_images" in data
+                ):
+                    latest_detection_result = data
+                else:
+                    fallback_results.append(data)
+            except (json.JSONDecodeError, AttributeError):
+                fallback_results.append(str(result))
+
+        if latest_detection_result is not None:
+            return json.dumps(latest_detection_result, ensure_ascii=False)
+        return json.dumps(fallback_results[-1], ensure_ascii=False) if fallback_results else None
+
+    @staticmethod
+    def _save_history_message(
+        user_id: int,
+        session_id: str,
+        role: str,
+        content: str,
+        tool_calls: list[dict] | None = None,
+        tool_result: str | None = None,
+    ):
+        try:
+            chat_history_service.save_message(
+                user_id=user_id,
+                session_id=session_id,
+                role=role,
+                content=content,
+                tool_calls=tool_calls,
+                tool_result=tool_result,
+            )
+            conversation_memory.add_message(user_id, session_id, role, content)
+        except Exception as e:
+            logger.error("保存历史消息失败: %s", e)
+
+    async def chat(
+        self,
+        message: str,
+        image_path: str = None,
+        image_paths: list[str] | None = None,
+        display_language: str = "zh",
+    ) -> dict:
         message, _ = self._attachment_message(message, image_path, image_paths)
         if display_language == "en":
             message += "\n[System instruction: Respond in English.]"
@@ -341,6 +410,16 @@ class DetectionAgent:
                 "intermediate_steps": [],
             }
 
+    def _fallback_reply(self, message: str, display_language: str) -> str:
+        if "[附件" in message:
+            if display_language == "en":
+                return "The AI service is currently unavailable. Please try again later."
+            else:
+                return "AI 服务暂时不可用，请稍后重试。"
+        if display_language == "en":
+            return "The AI service is currently unavailable. Please try again later."
+        return "AI 服务暂时不可用，请稍后重试。"
+
     async def chat_stream(
         self,
         message: str,
@@ -349,6 +428,10 @@ class DetectionAgent:
         user_id: int | None = None,
         scene_id: int | None = None,
         session_id: str | None = None,
+        language: str = "zh",
+        attachment_urls: list[str] | None = None,
+    ) -> AsyncGenerator:
+        display_language = language
         display_language: str = "zh",
         attachment_urls: list[str] | None = None,
     ) -> AsyncGenerator:
@@ -403,6 +486,10 @@ class DetectionAgent:
         assistant_parts: list[str] = []
         tool_calls: list[dict] = []
         tool_results: list[str] = []
+
+        thinking_msg = "Analyzing your request..." if display_language == "en" else "正在分析您的请求..."
+        yield {"type": "thinking", "content": thinking_msg}
+
         try:
             if self.executor is None:
                 async for event in self._local_stream(
@@ -433,25 +520,26 @@ class DetectionAgent:
                 event_kind = event["event"]
 
                 if event_kind == "on_chat_model_stream":
-                    # LLM 正在生成回复的文本片段
                     chunk = event["data"]["chunk"]
                     if hasattr(chunk, "content") and chunk.content:
                         assistant_parts.append(chunk.content)
                         yield {"type": "text_chunk", "content": chunk.content}
 
                 elif event_kind == "on_tool_start":
-                    # Agent 开始调用工具
                     tool_name = event["name"]
                     tool_input = event["data"].get("input", {})
                     logger.info(
                         "工具调用: %s, 输入: %s", tool_name, str(tool_input)[:200]
                     )
                     tool_calls.append({"tool": tool_name, "input": tool_input})
+                    yield {
+                        "type": "tool_start",
+                        "tool": tool_name,
+                        "input": {k: str(v)[:100] for k, v in tool_input.items()},
+                    }
                     yield {"type": "tool_call", "tool": tool_name, "input": tool_input}
 
                 elif event_kind == "on_tool_end":
-                    # 工具调用完成
-                    # 兼容不同 LangChain 版本的 output 路径
                     tool_data = event.get("data", {})
                     tool_output = tool_data.get("output", "")
                     tool_name = event.get("name", "")
@@ -461,14 +549,14 @@ class DetectionAgent:
                         type(tool_output).__name__,
                         len(str(tool_output)) if tool_output else 0,
                     )
-                    # 记录 event data 的所有键，便于调试
                     logger.debug("on_tool_end data keys: %s", list(tool_data.keys()))
                     # LangChain 可能返回 ToolMessage；仅持久化其中的 content，避免 str() 包装破坏 JSON。
                     serialized_output = self._tool_output_text(tool_output)
                     tool_results.append(serialized_output)
                     yield {
-                        "type": "tool_result",
+                        "type": "tool_end",
                         "tool": tool_name,
+                        "summary": serialized_output[:100] if serialized_output else "",
                         "result": serialized_output,
                     }
 
@@ -494,6 +582,48 @@ class DetectionAgent:
             _tool_user_id.reset(user_token)
             _tool_scene_id.reset(scene_token)
             _tool_display_language.reset(language_token)
+
+        yield {
+            "type": "done",
+            "full_text": "".join(assistant_parts),
+        }
+
+    async def _local_stream(
+        self, message: str, attachment_paths: list[str], display_language: str
+    ):
+        from app.services.detection_service import detection_service
+
+        if not attachment_paths:
+            error_msg = "Please provide an image or video for detection." if display_language == "en" else "请提供图片或视频进行检测。"
+            yield {"type": "error", "content": error_msg}
+            return
+
+        for path in attachment_paths:
+            if _is_video_path(path):
+                yield {"type": "tool_call", "tool": "detect_video_file", "input": {"video_path": path}}
+                try:
+                    result = detection_service.detect_video(
+                        path,
+                        scene_id=_tool_scene_id.get(),
+                        user_id=_tool_user_id.get(),
+                        display_language=_tool_display_language.get(),
+                    )
+                    result["type"] = "video"
+                    yield {"type": "tool_result", "tool": "detect_video_file", "result": json.dumps(result, ensure_ascii=False)}
+                except Exception as e:
+                    yield {"type": "error", "content": str(e)}
+            else:
+                yield {"type": "tool_call", "tool": "detect_single_image", "input": {"image_path": path}}
+                try:
+                    result = detection_service.detect_single(
+                        path,
+                        scene_id=_tool_scene_id.get(),
+                        user_id=_tool_user_id.get(),
+                        display_language=_tool_display_language.get(),
+                    )
+                    yield {"type": "tool_result", "tool": "detect_single_image", "result": json.dumps(result, ensure_ascii=False)}
+                except Exception as e:
+                    yield {"type": "error", "content": str(e)}
 
     @staticmethod
     def _message_for_history(message: str, attachment_paths: list[str]) -> str:
@@ -669,5 +799,4 @@ class DetectionAgent:
         return [text[index : index + width] for index in range(0, len(text), width)]
 
 
-# 创建全局单例
 detection_agent = DetectionAgent()

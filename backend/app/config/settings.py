@@ -69,6 +69,7 @@ class Settings(BaseSettings):
 
     # ── RAG / Embedding 配置 ──────────────────────────
     EMBEDDING_MODEL: str = "text-embedding-v3"  # 通义千问 Embedding 模型
+    EMBEDDING_DIM: int = 1024  # 向量维度（text-embedding-v3=1024, text-embedding-3-small=1536）
     EMBEDDING_DIM: int = (
         1024  # 向量维度（text-embedding-v3=1024, text-embedding-3-small=1536）
     )
