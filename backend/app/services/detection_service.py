@@ -189,6 +189,12 @@ class DetectionService:
     def _load_label_font(size: int):
         candidates = [
             DetectionConfig.font_path,
+            # macOS 自带中文字体。OpenCV Hershey 字体不支持中文，必须交给 Pillow。
+            "/System/Library/Fonts/PingFang.ttc",
+            "/System/Library/Fonts/STHeiti Medium.ttc",
+            "/System/Library/Fonts/Hiragino Sans GB.ttc",
+            "/System/Library/Fonts/Supplemental/Songti.ttc",
+            "/Library/Fonts/Arial Unicode.ttf",
             "C:/Windows/Fonts/msyh.ttc",
             "C:/Windows/Fonts/simhei.ttf",
             "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
