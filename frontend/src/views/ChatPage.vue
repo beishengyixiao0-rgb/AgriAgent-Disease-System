@@ -837,26 +837,44 @@ const sendMessage = async () => {
     },
     {
       onMessage: (event) => {
-        if (event.type === 'text_chunk' || typeof event.content === 'string') {
+        if (event.type === 'thinking') {
+          assistantMessage.modelThinking = true
+        } else if (event.type === 'text_chunk') {
           if (assistantMessage.detectionResult && event.content) {
             assistantMessage.modelThinking = false
           }
           assistantMessage.content += event.content || ''
+        } else if (event.type === 'error' && event.content) {
+          assistantMessage.modelThinking = false
+          assistantMessage.content += event.content
         }
 
         if (event.session_id) {
           agentStore.currentSessionId = event.session_id
         }
 
-        if (event.type === 'tool_result' && event.result) {
+        if (['tool_result', 'tool_end'].includes(event.type) && event.result) {
           try {
             const detectionResult = typeof event.result === 'string'
               ? JSON.parse(event.result)
               : event.result
+            const detectionTools = [
+              'detect_single_image',
+              'detect_batch_images',
+              'detect_zip_images_file',
+              'detect_video_file',
+            ]
+            const isDetectionResult = detectionTools.includes(event.tool)
+              || detectionResult?.type === 'video'
+              || 'total_objects' in (detectionResult || {})
+              || 'annotated_image_url' in (detectionResult || {})
+              || 'annotated_images' in (detectionResult || {})
 
-            assistantMessage.type = 'agent-analysis'
-            assistantMessage.detectionResult = detectionResult
-            assistantMessage.modelThinking = true
+            if (isDetectionResult) {
+              assistantMessage.type = 'agent-analysis'
+              assistantMessage.detectionResult = detectionResult
+              assistantMessage.modelThinking = true
+            }
           } catch (error) {
             console.error('[Agent 检测结果解析失败]', error, event.result)
           }

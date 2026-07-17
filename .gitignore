@@ -72,6 +72,7 @@ env/
 *.log
 logs/
 *.log.*
+backend/logs/
 
 # # ── 数据文件 ────────────────────────────────────────
 backend/datasets/
@@ -90,6 +91,21 @@ videos/
 *.mp4
 *.avi
 *.mov
+
+# 固定导入模型产物：保留项目正式使用的 task_001。
+!backend/runs/
+!backend/runs/train/
+!backend/runs/train/task_001/
+!backend/runs/train/task_001/weights/
+!backend/runs/train/task_001/results.csv
+!backend/runs/train/task_001/results.png
+!backend/runs/train/task_001/confusion_matrix.png
+!backend/runs/train/task_001/confusion_matrix_normalized.png
+!backend/runs/train/task_001/BoxF1_curve.png
+!backend/runs/train/task_001/BoxP_curve.png
+!backend/runs/train/task_001/BoxPR_curve.png
+!backend/runs/train/task_001/BoxR_curve.png
+!backend/runs/train/task_001/weights/best.pt
 
 # ── Docker ──────────────────────────────────────────
 .docker/
@@ -123,6 +139,7 @@ yarn.lock
 # htmlcov/
 # .tox/
 # .hypothesis/
+frontend/coverage/
 
 # # ── Jupyter Notebook ────────────────────────────────
 # .ipynb_checkpoints/
