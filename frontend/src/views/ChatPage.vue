@@ -7,13 +7,14 @@
       @select-session="handleSelectSession"
       @delete-session="handleDeleteSession"
       @rename-session="handleRenameSession"
+      @toggle-pin="handleTogglePin"
     />
 
     <main class="main-area">
       <header class="topbar">
-        <span>{{ tr('chat.title') }}</span>
+        <span>{{ tr("chat.title") }}</span>
         <div class="topbar-actions">
-          <span class="model-status">🟢 {{ tr('chat.modelReady') }}</span>
+          <span class="model-status">🟢 {{ tr("chat.modelReady") }}</span>
           <LanguageSwitcher />
         </div>
       </header>
@@ -51,298 +52,315 @@
 </template>
 
 <script setup>
-import { uploadCommonFile } from '@/api/common'
+import { uploadCommonFile } from "@/api/common";
 import {
   detectBatch,
   detectSingle,
   detectVideo,
   detectZip,
   getVideoStatus,
-} from '@/api/detection'
-import { ElMessage } from 'element-plus'
-import { storeToRefs } from 'pinia'
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+} from "@/api/detection";
+import { ElMessage } from "element-plus";
+import { storeToRefs } from "pinia";
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+} from "vue";
 
-import ChatComposer from '@/components/ChatComposer.vue'
-import ChatMessageList from '@/components/ChatMessageList.vue'
-import ChatSidebar from '@/components/ChatSidebar.vue'
-import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
-import { useAgentStore } from '@/stores/agent'
-import { useLocaleStore } from '@/stores/locale'
-import { t } from '@/utils/i18n'
-import { streamChat } from '@/utils/stream'
+import ChatComposer from "@/components/ChatComposer.vue";
+import ChatMessageList from "@/components/ChatMessageList.vue";
+import ChatSidebar from "@/components/ChatSidebar.vue";
+import LanguageSwitcher from "@/components/LanguageSwitcher.vue";
+import { useAgentStore } from "@/stores/agent";
+import { useLocaleStore } from "@/stores/locale";
+import { t } from "@/utils/i18n";
+import { streamChat } from "@/utils/stream";
 
-const message = ref('')
-const agentStore = useAgentStore()
-const localeStore = useLocaleStore()
-const tr = (key, params) => t(key, localeStore.locale, params)
-const { messages, sessions, currentSessionId } = storeToRefs(agentStore)
+const message = ref("");
+const agentStore = useAgentStore();
+const localeStore = useLocaleStore();
+const tr = (key, params) => t(key, localeStore.locale, params);
+const { messages, sessions, currentSessionId } = storeToRefs(agentStore);
 
-const uploadQueue = ref([])
-const hasReadyCameraAttachment = computed(() => uploadQueue.value.some((item) => (
-  item.mode === 'camera' && item.status === 'success'
-)))
-const uploadMode = ref('image')
-const inputAccept = ref('image/*')
-const inputMultiple = ref(false)
-const inputCapture = ref(null)
-const showUploadMenu = ref(false)
-const showCameraModal = ref(false)
-const cameraError = ref('')
+const uploadQueue = ref([]);
+const hasReadyCameraAttachment = computed(() =>
+  uploadQueue.value.some(
+    (item) => item.mode === "camera" && item.status === "success",
+  ),
+);
+const uploadMode = ref("image");
+const inputAccept = ref("image/*");
+const inputMultiple = ref(false);
+const inputCapture = ref(null);
+const showUploadMenu = ref(false);
+const showCameraModal = ref(false);
+const cameraError = ref("");
 
-const chatComposerRef = ref(null)
-const chatMessageListRef = ref(null)
+const chatComposerRef = ref(null);
+const chatMessageListRef = ref(null);
 
 const scrollToBottom = async () => {
-  await nextTick()
-  chatMessageListRef.value?.scrollToBottom()
-}
+  await nextTick();
+  chatMessageListRef.value?.scrollToBottom();
+};
 
 const toggleUploadMenu = () => {
-  showUploadMenu.value = !showUploadMenu.value
-}
+  showUploadMenu.value = !showUploadMenu.value;
+};
 
 const setUploadMode = (mode) => {
-  uploadMode.value = mode
+  uploadMode.value = mode;
 
-  if (mode === 'image' || mode === 'agent-image') {
-    inputAccept.value = 'image/*'
-    inputMultiple.value = false
-    inputCapture.value = null
-  } else if (mode === 'batch') {
-    inputAccept.value = 'image/*'
-    inputMultiple.value = true
-    inputCapture.value = null
-  } else if (mode === 'video') {
-    inputAccept.value = 'video/*'
-    inputMultiple.value = false
-    inputCapture.value = null
-  } else if (mode === 'camera') {
-    inputAccept.value = 'image/*'
-    inputMultiple.value = false
-    inputCapture.value = 'environment'
+  if (mode === "image" || mode === "agent-image") {
+    inputAccept.value = "image/*";
+    inputMultiple.value = false;
+    inputCapture.value = null;
+  } else if (mode === "batch") {
+    inputAccept.value = "image/*";
+    inputMultiple.value = true;
+    inputCapture.value = null;
+  } else if (mode === "video") {
+    inputAccept.value = "video/*";
+    inputMultiple.value = false;
+    inputCapture.value = null;
+  } else if (mode === "camera") {
+    inputAccept.value = "image/*";
+    inputMultiple.value = false;
+    inputCapture.value = "environment";
   }
-}
+};
 
 const closeCameraModal = () => {
-  showCameraModal.value = false
-  cameraError.value = ''
-}
+  showCameraModal.value = false;
+  cameraError.value = "";
+};
 
 const handleCameraError = (error) => {
-  cameraError.value = error
-  showCameraModal.value = false
+  cameraError.value = error;
+  showCameraModal.value = false;
   // 相机不可用时改选本地照片，但仍沿用“有提示词走 Agent、无提示词走 YOLO”的分流。
-  setUploadMode('camera')
-  inputCapture.value = null
+  setUploadMode("camera");
+  inputCapture.value = null;
 
   nextTick(() => {
-    chatComposerRef.value?.openFilePicker()
-  })
-}
+    chatComposerRef.value?.openFilePicker();
+  });
+};
 
-const openUploadMenu = async (mode = 'image') => {
-  setUploadMode(mode)
-  showUploadMenu.value = false
+const openUploadMenu = async (mode = "image") => {
+  setUploadMode(mode);
+  showUploadMenu.value = false;
 
-  if (mode === 'camera') {
-    showCameraModal.value = true
-    return
+  if (mode === "camera") {
+    showCameraModal.value = true;
+    return;
   }
 
   nextTick(() => {
-    chatComposerRef.value?.openFilePicker()
-  })
-}
+    chatComposerRef.value?.openFilePicker();
+  });
+};
 
 const handleUploadModeSelection = (mode) => {
-  showUploadMenu.value = false
+  showUploadMenu.value = false;
 
-  if (mode === 'image') {
-    handleQuickDetect('single')
-    return
+  if (mode === "image") {
+    handleQuickDetect("single");
+    return;
   }
 
-  if (mode === 'realtime-camera') {
-    startRealtimeDetection()
-    return
+  if (mode === "realtime-camera") {
+    startRealtimeDetection();
+    return;
   }
 
-  if (mode === 'batch') {
-    handleQuickDetect('batch')
-    return
+  if (mode === "batch") {
+    handleQuickDetect("batch");
+    return;
   }
 
-  if (mode === 'agent-image') {
-    openUploadMenu('agent-image')
-    return
+  if (mode === "agent-image") {
+    openUploadMenu("agent-image");
+    return;
   }
 
-  if (mode === 'video') {
-    handleVideoDetect()
-    return
+  if (mode === "video") {
+    handleVideoDetect();
+    return;
   }
 
-  openUploadMenu(mode)
-}
+  openUploadMenu(mode);
+};
 
 const startRealtimeDetection = () => {
   agentStore.addMessage({
-    role: 'user',
-    content: '请开启摄像头进行实时检测',
-  })
+    role: "user",
+    content: "请开启摄像头进行实时检测",
+  });
   agentStore.addMessage({
     id: `realtime-${Date.now()}`,
-    role: 'assistant',
-    type: 'realtime-detection',
-    content: '请确认摄像头权限并开始实时检测',
+    role: "assistant",
+    type: "realtime-detection",
+    content: "请确认摄像头权限并开始实时检测",
     config: {
-      mode: 'cpu',
+      mode: "cpu",
       conf: 0.25,
       iou: 0.45,
     },
-  })
-  scrollToBottom()
-}
+  });
+  scrollToBottom();
+};
 
 const handleRealtimeFinished = ({ result }) => {
   agentStore.addMessage({
-    role: 'assistant',
-    type: 'diagnosis',
+    role: "assistant",
+    type: "diagnosis",
     content: `实时检测完成，共处理 ${result.processed_frames ?? 0} 帧。`,
     detectionResult: result,
-    annotatedImage: result.annotated_image_url || '',
-  })
-  scrollToBottom()
-}
+    annotatedImage: result.annotated_image_url || "",
+  });
+  scrollToBottom();
+};
 
 const handleCameraCapture = (file) => {
-  closeCameraModal()
-  setUploadMode('camera')
-  createUploadItem(file)
-}
+  closeCameraModal();
+  setUploadMode("camera");
+  createUploadItem(file);
+};
 
 const removeUploadItem = (id) => {
-  const item = uploadQueue.value.find((entry) => entry.id === id)
+  const item = uploadQueue.value.find((entry) => entry.id === id);
 
   if (item?.timer) {
-    window.clearInterval(item.timer)
+    window.clearInterval(item.timer);
   }
 
   if (item?.previewUrl) {
-    URL.revokeObjectURL(item.previewUrl)
+    URL.revokeObjectURL(item.previewUrl);
   }
 
-  uploadQueue.value = uploadQueue.value.filter((entry) => entry.id !== id)
-}
+  uploadQueue.value = uploadQueue.value.filter((entry) => entry.id !== id);
+};
 
-const getUploadedFileUrl = (result) => (
-  result?.url
-  || result?.file_url
-  || result?.object_url
-  || result?.data?.url
-  || result?.data?.file_url
-  || ''
-)
+const getUploadedFileUrl = (result) =>
+  result?.url ||
+  result?.file_url ||
+  result?.object_url ||
+  result?.data?.url ||
+  result?.data?.file_url ||
+  "";
 
 const uploadAttachment = async (item) => {
-  item.status = 'uploading'
-  item.progress = 0
-  item.errorMessage = ''
+  item.status = "uploading";
+  item.progress = 0;
+  item.errorMessage = "";
 
-  const formData = new FormData()
-  formData.append('file', item.file)
+  const formData = new FormData();
+  formData.append("file", item.file);
 
   try {
     const result = await uploadCommonFile(formData, (progressEvent) => {
-      if (!progressEvent.total) return
-      item.progress = Math.min(99, Math.round((progressEvent.loaded / progressEvent.total) * 100))
-    })
+      if (!progressEvent.total) return;
+      item.progress = Math.min(
+        99,
+        Math.round((progressEvent.loaded / progressEvent.total) * 100),
+      );
+    });
 
-    item.progress = 100
-    item.status = 'success'
-    item.uploadResult = result
-    item.uploadUrl = getUploadedFileUrl(result)
+    item.progress = 100;
+    item.status = "success";
+    item.uploadResult = result;
+    item.uploadUrl = getUploadedFileUrl(result);
 
     // Agent 图片和手动拍照需要停留在输入区，等待用户输入文字并点击发送。
-    if (!['agent-image', 'camera'].includes(item.mode)) {
-      completeUpload(item, item.file)
+    if (!["agent-image", "camera"].includes(item.mode)) {
+      completeUpload(item, item.file);
     }
   } catch (error) {
-    item.status = 'error'
-    item.errorMessage = getErrorMessage(error)
+    item.status = "error";
+    item.errorMessage = getErrorMessage(error);
   }
-}
+};
 
 const retryUploadItem = (id) => {
-  const item = uploadQueue.value.find((entry) => entry.id === id)
-  if (item) uploadAttachment(item)
-}
+  const item = uploadQueue.value.find((entry) => entry.id === id);
+  if (item) uploadAttachment(item);
+};
 
 const createUploadItem = (file) => {
-  const isVideo = file.type.startsWith('video/')
-  const previewUrl = URL.createObjectURL(file)
+  const isVideo = file.type.startsWith("video/");
+  const previewUrl = URL.createObjectURL(file);
 
   // 上传回调会持续修改这个对象，使用 reactive 才能立即刷新进度与成功状态。
   const item = reactive({
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     name: file.name,
-    type: isVideo ? 'video' : 'image',
+    type: isVideo ? "video" : "image",
     previewUrl,
     progress: 0,
-    status: 'uploading',
+    status: "uploading",
     mode: uploadMode.value,
-    modeLabel: uploadMode.value === 'agent-image'
-      ? 'Agent attachment'
-      : uploadMode.value === 'batch'
-        ? 'Batch'
-        : uploadMode.value === 'video'
-          ? 'Video'
-          : uploadMode.value === 'camera'
-            ? 'Camera'
-            : 'Single',
+    modeLabel:
+      uploadMode.value === "agent-image"
+        ? "Agent attachment"
+        : uploadMode.value === "batch"
+          ? "Batch"
+          : uploadMode.value === "video"
+            ? "Video"
+            : uploadMode.value === "camera"
+              ? "Camera"
+              : "Single",
     file,
     uploadResult: null,
-    uploadUrl: '',
-    errorMessage: '',
-  })
+    uploadUrl: "",
+    errorMessage: "",
+  });
 
-  uploadQueue.value.unshift(item)
-  item.uploadPromise = uploadAttachment(item)
-  return item
-}
+  uploadQueue.value.unshift(item);
+  item.uploadPromise = uploadAttachment(item);
+  return item;
+};
 
 const handleFileSelection = (files) => {
-  const normalizedFiles = Array.from(files || [])
+  const normalizedFiles = Array.from(files || []);
 
-  if (!normalizedFiles.length) return
+  if (!normalizedFiles.length) return;
 
-  if (uploadMode.value === 'camera') {
-    handleCameraCapture(normalizedFiles[0])
-    return
+  if (uploadMode.value === "camera") {
+    handleCameraCapture(normalizedFiles[0]);
+    return;
   }
 
-  const selectedFiles = uploadMode.value === 'batch'
-    ? normalizedFiles
-    : normalizedFiles.slice(0, 1)
+  const selectedFiles =
+    uploadMode.value === "batch"
+      ? normalizedFiles
+      : normalizedFiles.slice(0, 1);
 
-  selectedFiles.forEach((file) => createUploadItem(file))
-}
+  selectedFiles.forEach((file) => createUploadItem(file));
+};
 
 /** 把快捷检测原图上传到持久化存储，供历史会话刷新后恢复预览。 */
 const uploadHistoryAttachments = async (files) => {
-  const imageFiles = Array.from(files || []).filter((file) => file.type?.startsWith('image/'))
-  const uploads = await Promise.allSettled(imageFiles.map(async (file) => {
-    const formData = new FormData()
-    formData.append('file', file)
-    const result = await uploadCommonFile(formData)
-    return result?.attachment_url || result?.data?.attachment_url || null
-  }))
+  const imageFiles = Array.from(files || []).filter((file) =>
+    file.type?.startsWith("image/"),
+  );
+  const uploads = await Promise.allSettled(
+    imageFiles.map(async (file) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      const result = await uploadCommonFile(formData);
+      return result?.attachment_url || result?.data?.attachment_url || null;
+    }),
+  );
 
   return uploads
-    .filter((item) => item.status === 'fulfilled' && item.value)
-    .map((item) => item.value)
-}
+    .filter((item) => item.status === "fulfilled" && item.value)
+    .map((item) => item.value);
+};
 
 const persistQuickDetectionHistory = async ({
   files,
@@ -352,164 +370,185 @@ const persistQuickDetectionHistory = async ({
   attachmentUrls = [],
 }) => {
   try {
-    const uploadedAttachments = await uploadHistoryAttachments(files)
-    const attachments = [...attachmentUrls, ...uploadedAttachments].filter(Boolean)
+    const uploadedAttachments = await uploadHistoryAttachments(files);
+    const attachments = [...attachmentUrls, ...uploadedAttachments].filter(
+      Boolean,
+    );
     await agentStore.saveQuickDetection({
       userContent,
       assistantContent,
       detectionResult: result,
       attachments,
-    })
+    });
   } catch (error) {
     // 检测已经成功时，历史保存失败不应影响当前结果卡片。
-    console.warn('[快捷检测历史保存失败]', error)
+    console.warn("[快捷检测历史保存失败]", error);
   }
-}
+};
 
 /**
  * 快捷检测：选择文件后直接调用检测 API，不经过 LLM 对话。
  * 由页面底部输入栏的上传菜单触发。
  */
 async function handleQuickDetect(type, selectedFiles = null) {
-  const input = document.createElement('input')
-  input.type = 'file'
-  input.accept = type === 'batch' ? 'image/*,.zip' : 'image/*'
-  input.multiple = type === 'batch'
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = type === "batch" ? "image/*,.zip" : "image/*";
+  input.multiple = type === "batch";
 
   input.onchange = async (event) => {
-    const files = Array.from(event.target?.files || [])
-    if (!files.length) return
+    const files = Array.from(event.target?.files || []);
+    if (!files.length) return;
 
-    if (type === 'single') {
-      const file = files[0]
-      const imagePreview = URL.createObjectURL(file)
+    if (type === "single") {
+      const file = files[0];
+      const imagePreview = URL.createObjectURL(file);
 
       agentStore.addMessage({
-        role: 'user',
-        type: 'image',
-        content: tr('chat.quick.singleUser', { name: file.name }),
+        role: "user",
+        type: "image",
+        content: tr("chat.quick.singleUser", { name: file.name }),
         image: file.name,
         imagePreview,
         imageUrl: imagePreview,
-      })
+      });
 
       agentStore.addMessage({
-        role: 'assistant',
-        content: tr('chat.quick.singleLoading'),
+        role: "assistant",
+        content: tr("chat.quick.singleLoading"),
         loading: true,
-      })
-      const loadingMessage = agentStore.messages[agentStore.messages.length - 1]
-      scrollToBottom()
+      });
+      const loadingMessage =
+        agentStore.messages[agentStore.messages.length - 1];
+      scrollToBottom();
 
-      const formData = new FormData()
-      formData.append('file', file)
+      const formData = new FormData();
+      formData.append("file", file);
 
       try {
-        formData.append('conf', '0.25')
-        formData.append('iou', '0.45')
+        formData.append("conf", "0.25");
+        formData.append("iou", "0.45");
 
-        const result = await detectSingle(formData)
-        loadingMessage.content = tr('chat.quick.singleDone', { count: result.total_objects ?? 0 })
-        loadingMessage.loading = false
-        loadingMessage.type = 'diagnosis'
-        loadingMessage.detectionResult = result
-        const annotatedBase64 = result.annotated_image_base64 || result.annotated_image
+        const result = await detectSingle(formData);
+        loadingMessage.content = tr("chat.quick.singleDone", {
+          count: result.total_objects ?? 0,
+        });
+        loadingMessage.loading = false;
+        loadingMessage.type = "diagnosis";
+        loadingMessage.detectionResult = result;
+        const annotatedBase64 =
+          result.annotated_image_base64 || result.annotated_image;
         loadingMessage.annotatedImage = annotatedBase64
-          ? (String(annotatedBase64).startsWith('data:')
-              ? annotatedBase64
-              : `data:image/jpeg;base64,${annotatedBase64}`)
-          : result.annotated_image_url || result.result_image_url || ''
+          ? String(annotatedBase64).startsWith("data:")
+            ? annotatedBase64
+            : `data:image/jpeg;base64,${annotatedBase64}`
+          : result.annotated_image_url || result.result_image_url || "";
         void persistQuickDetectionHistory({
           files: [file],
-          userContent: tr('chat.quick.singleUser', { name: file.name }),
+          userContent: tr("chat.quick.singleUser", { name: file.name }),
           assistantContent: loadingMessage.content,
           result,
-        })
+        });
       } catch (error) {
-        loadingMessage.content = tr('chat.quick.singleFailed', { message: getErrorMessage(error) })
-        loadingMessage.loading = false
-        loadingMessage.error = true
+        loadingMessage.content = tr("chat.quick.singleFailed", {
+          message: getErrorMessage(error),
+        });
+        loadingMessage.loading = false;
+        loadingMessage.error = true;
       }
 
-      scrollToBottom()
-      return
+      scrollToBottom();
+      return;
     }
 
-    const isZip = files.length === 1 && files[0].name.toLowerCase().endsWith('.zip')
-    const formData = new FormData()
+    const isZip =
+      files.length === 1 && files[0].name.toLowerCase().endsWith(".zip");
+    const formData = new FormData();
 
     if (isZip) {
-      formData.append('file', files[0])
+      formData.append("file", files[0]);
       agentStore.addMessage({
-        role: 'user',
-        content: tr('chat.quick.zip', { name: files[0].name }),
-      })
+        role: "user",
+        content: tr("chat.quick.zip", { name: files[0].name }),
+      });
     } else {
-      files.forEach((file) => formData.append('files', file))
+      files.forEach((file) => formData.append("files", file));
       agentStore.addMessage({
-        role: 'user',
-        content: tr('chat.quick.batchImages', { count: files.length }),
+        role: "user",
+        content: tr("chat.quick.batchImages", { count: files.length }),
         images: files.map((file) => URL.createObjectURL(file)),
-      })
+      });
     }
 
     agentStore.addMessage({
-      role: 'assistant',
-      content: tr('chat.quick.batchLoading'),
+      role: "assistant",
+      content: tr("chat.quick.batchLoading"),
       loading: true,
-    })
-    const loadingMessage = agentStore.messages[agentStore.messages.length - 1]
-    scrollToBottom()
+    });
+    const loadingMessage = agentStore.messages[agentStore.messages.length - 1];
+    scrollToBottom();
 
     try {
-      const result = await (isZip ? detectZip(formData) : detectBatch(formData))
+      const result = await (isZip
+        ? detectZip(formData)
+        : detectBatch(formData));
 
       if (result.error) {
-        loadingMessage.content = tr('chat.quick.batchFailed', { message: result.error })
-        loadingMessage.loading = false
-        loadingMessage.error = true
-        scrollToBottom()
-        return
+        loadingMessage.content = tr("chat.quick.batchFailed", {
+          message: result.error,
+        });
+        loadingMessage.loading = false;
+        loadingMessage.error = true;
+        scrollToBottom();
+        return;
       }
 
-      const displayResult = !isZip && Array.isArray(result.annotated_images)
-        ? {
-            ...result,
-            annotated_images: result.annotated_images.map((image, index) => ({
-              ...image,
-              original_filename: files[index]?.name || image.image_path,
-            })),
-          }
-        : result
+      const displayResult =
+        !isZip && Array.isArray(result.annotated_images)
+          ? {
+              ...result,
+              annotated_images: result.annotated_images.map((image, index) => ({
+                ...image,
+                original_filename: files[index]?.name || image.image_path,
+              })),
+            }
+          : result;
 
-      loadingMessage.content = tr('chat.quick.batchDone', { count: displayResult.total_objects ?? 0 })
-      loadingMessage.loading = false
-      loadingMessage.type = 'diagnosis'
-      loadingMessage.detectionResult = displayResult
-      loadingMessage.annotatedImage = displayResult.annotated_image_url || displayResult.result_image_url || ''
+      loadingMessage.content = tr("chat.quick.batchDone", {
+        count: displayResult.total_objects ?? 0,
+      });
+      loadingMessage.loading = false;
+      loadingMessage.type = "diagnosis";
+      loadingMessage.detectionResult = displayResult;
+      loadingMessage.annotatedImage =
+        displayResult.annotated_image_url ||
+        displayResult.result_image_url ||
+        "";
       void persistQuickDetectionHistory({
         files,
         userContent: isZip
-          ? tr('chat.quick.zip', { name: files[0].name })
-          : tr('chat.quick.batchImages', { count: files.length }),
+          ? tr("chat.quick.zip", { name: files[0].name })
+          : tr("chat.quick.batchImages", { count: files.length }),
         assistantContent: loadingMessage.content,
         result: displayResult,
-      })
+      });
     } catch (error) {
-      loadingMessage.content = tr('chat.quick.batchFailed', { message: getErrorMessage(error) })
-      loadingMessage.loading = false
-      loadingMessage.error = true
+      loadingMessage.content = tr("chat.quick.batchFailed", {
+        message: getErrorMessage(error),
+      });
+      loadingMessage.loading = false;
+      loadingMessage.error = true;
     }
 
-    scrollToBottom()
-  }
+    scrollToBottom();
+  };
 
   if (selectedFiles?.length) {
-    await input.onchange({ target: { files: selectedFiles } })
-    return
+    await input.onchange({ target: { files: selectedFiles } });
+    return;
   }
 
-  input.click()
+  input.click();
 }
 
 /**
@@ -521,85 +560,107 @@ async function handleQuickDetect(type, selectedFiles = null) {
  * 4. 后端返回 task_id，前端开始轮询进度
  * 5. 处理完成后展示检测结果
  */
-const VIDEO_POLL_INTERVAL = 1500
-const VIDEO_POLL_MAX_ATTEMPTS = 200
-const activeVideoPolls = new Set()
+const VIDEO_POLL_INTERVAL = 1500;
+const VIDEO_POLL_MAX_ATTEMPTS = 200;
+const activeVideoPolls = new Set();
 
-const waitForNextVideoPoll = () => (
-  new Promise((resolve) => window.setTimeout(resolve, VIDEO_POLL_INTERVAL))
-)
+const waitForNextVideoPoll = () =>
+  new Promise((resolve) => window.setTimeout(resolve, VIDEO_POLL_INTERVAL));
 
 const normalizeVideoResult = (payload, taskId) => {
-  const nestedResult = payload?.result
-    || payload?.detection_result
-    || payload?.data?.result
-    || (payload?.data && typeof payload.data === 'object' ? payload.data : null)
-  const result = nestedResult && typeof nestedResult === 'object' ? nestedResult : payload
+  const nestedResult =
+    payload?.result ||
+    payload?.detection_result ||
+    payload?.data?.result ||
+    (payload?.data && typeof payload.data === "object" ? payload.data : null);
+  const result =
+    nestedResult && typeof nestedResult === "object" ? nestedResult : payload;
 
   return {
     ...result,
-    type: 'video',
+    type: "video",
     task_id: result?.task_id ?? taskId,
-  }
-}
+  };
+};
 
 const updateVideoProgress = (messageItem, patch) => {
   messageItem.videoProgress = {
     ...(messageItem.videoProgress || {}),
     ...patch,
-  }
-}
+  };
+};
 
 async function pollVideoProgress(taskId, loadingMessage) {
-  const pollToken = Symbol(`video-${taskId}`)
-  activeVideoPolls.add(pollToken)
+  const pollToken = Symbol(`video-${taskId}`);
+  activeVideoPolls.add(pollToken);
 
   try {
     for (let attempt = 0; attempt < VIDEO_POLL_MAX_ATTEMPTS; attempt += 1) {
-      if (!activeVideoPolls.has(pollToken)) return null
+      if (!activeVideoPolls.has(pollToken)) return null;
 
-      const payload = await getVideoStatus(taskId) || {}
-      const status = String(payload.status || payload.state || '').toLowerCase()
-      const progress = Number(payload.progress ?? payload.percent ?? 0)
-      const progressPercent = progress > 0 && progress <= 1 ? progress * 100 : progress
+      const payload = (await getVideoStatus(taskId)) || {};
+      const status = String(
+        payload.status || payload.state || "",
+      ).toLowerCase();
+      const progress = Number(payload.progress ?? payload.percent ?? 0);
+      const progressPercent =
+        progress > 0 && progress <= 1 ? progress * 100 : progress;
 
       if (payload.error) {
-        throw new Error(payload.error)
+        throw new Error(payload.error);
       }
 
       if (Number.isFinite(progressPercent) && progressPercent > 0) {
-        loadingMessage.content = `视频处理中... ${Math.min(100, Math.round(progressPercent))}%`
+        loadingMessage.content = `视频处理中... ${Math.min(100, Math.round(progressPercent))}%`;
       } else {
-        loadingMessage.content = payload.message || '视频已上传，正在处理中...'
+        loadingMessage.content = payload.message || "视频已上传，正在处理中...";
       }
       updateVideoProgress(loadingMessage, {
-        status: 'processing',
-        progress: Number.isFinite(progressPercent) ? Math.min(100, Math.max(0, progressPercent)) : 0,
+        status: "processing",
+        progress: Number.isFinite(progressPercent)
+          ? Math.min(100, Math.max(0, progressPercent))
+          : 0,
         message: loadingMessage.content,
         taskId,
-      })
+      });
 
-      if (['completed', 'complete', 'success', 'succeeded', 'finished', 'done'].includes(status)) {
-        const result = normalizeVideoResult(payload, taskId)
-        loadingMessage.content = tr('chat.video.done', { count: result.total_objects ?? 0 })
-        loadingMessage.loading = false
-        loadingMessage.type = 'diagnosis'
-        loadingMessage.detectionResult = result
-        updateVideoProgress(loadingMessage, { status: 'completed', progress: 100 })
-        scrollToBottom()
-        return result
+      if (
+        [
+          "completed",
+          "complete",
+          "success",
+          "succeeded",
+          "finished",
+          "done",
+        ].includes(status)
+      ) {
+        const result = normalizeVideoResult(payload, taskId);
+        loadingMessage.content = tr("chat.video.done", {
+          count: result.total_objects ?? 0,
+        });
+        loadingMessage.loading = false;
+        loadingMessage.type = "diagnosis";
+        loadingMessage.detectionResult = result;
+        updateVideoProgress(loadingMessage, {
+          status: "completed",
+          progress: 100,
+        });
+        scrollToBottom();
+        return result;
       }
 
-      if (['failed', 'failure', 'error', 'cancelled', 'canceled'].includes(status)) {
-        throw new Error(payload.message || payload.detail || '视频处理失败')
+      if (
+        ["failed", "failure", "error", "cancelled", "canceled"].includes(status)
+      ) {
+        throw new Error(payload.message || payload.detail || "视频处理失败");
       }
 
-      await waitForNextVideoPoll()
+      await waitForNextVideoPoll();
     }
 
-    throw new Error('视频处理超时，请稍后重试')
+    throw new Error("视频处理超时，请稍后重试");
   } finally {
-    activeVideoPolls.delete(pollToken)
+    activeVideoPolls.delete(pollToken);
   }
 }
 
@@ -628,7 +689,7 @@ async function handleVideoDetect(selectedFile = null) {
     agentStore.addMessage({
       role: "user",
       type: "video",
-      content: `${tr('chat.video.user', { name: file.name })} (${(
+      content: `${tr("chat.video.user", { name: file.name })} (${(
         file.size /
         (1024 * 1024)
       ).toFixed(1)} MB)`,
@@ -650,8 +711,7 @@ async function handleVideoDetect(selectedFile = null) {
         taskId: null,
       },
     });
-    const loadingMessage =
-      agentStore.messages[agentStore.messages.length - 1];
+    const loadingMessage = agentStore.messages[agentStore.messages.length - 1];
     scrollToBottom();
 
     const formData = new FormData();
@@ -684,7 +744,7 @@ async function handleVideoDetect(selectedFile = null) {
       if (result) {
         void persistQuickDetectionHistory({
           files: [],
-          userContent: tr('chat.video.user', { name: file.name }),
+          userContent: tr("chat.video.user", { name: file.name }),
           assistantContent: loadingMessage.content,
           result,
           attachmentUrls: [result.source_video_url],
@@ -693,7 +753,9 @@ async function handleVideoDetect(selectedFile = null) {
     } catch (error) {
       console.error("[视频检测失败]", error);
 
-      loadingMessage.content = tr('chat.video.failed', { message: getErrorMessage(error) });
+      loadingMessage.content = tr("chat.video.failed", {
+        message: getErrorMessage(error),
+      });
 
       loadingMessage.loading = false;
       loadingMessage.error = true;
@@ -712,122 +774,133 @@ async function handleVideoDetect(selectedFile = null) {
   input.click();
 }
 
-const getErrorMessage = (error) => (
-  error?.response?.data?.detail
-  || error?.response?.data?.message
-  || error?.message
-  || '请重试'
-)
+const getErrorMessage = (error) =>
+  error?.response?.data?.detail ||
+  error?.response?.data?.message ||
+  error?.message ||
+  "请重试";
 
 const completeUpload = (item, file) => {
-  const isVideo = item.type === 'video'
+  const isVideo = item.type === "video";
   const uploadMessage = {
-    role: 'user',
-    type: isVideo ? 'video' : 'image',
-    imageUrl: isVideo ? '' : item.previewUrl,
-    videoUrl: isVideo ? item.previewUrl : '',
+    role: "user",
+    type: isVideo ? "video" : "image",
+    imageUrl: isVideo ? "" : item.previewUrl,
+    videoUrl: isVideo ? item.previewUrl : "",
     content: file.name,
-  }
+  };
 
-  agentStore.addMessage(uploadMessage)
-  scrollToBottom()
+  agentStore.addMessage(uploadMessage);
+  scrollToBottom();
 
   window.setTimeout(() => {
     agentStore.addMessage({
-      role: 'assistant',
-      type: 'diagnosis',
-      disease: isVideo ? 'Video inspection queued' : 'Tomato Late Blight',
-      plant: isVideo ? 'Crop stream' : 'Tomato',
-      severity: isVideo ? 'Medium' : 'High',
+      role: "assistant",
+      type: "diagnosis",
+      disease: isVideo ? "Video inspection queued" : "Tomato Late Blight",
+      plant: isVideo ? "Crop stream" : "Tomato",
+      severity: isVideo ? "Medium" : "High",
       confidence: isVideo ? 88.4 : 94.2,
       annotatedImage: item.previewUrl,
       description: isVideo
-        ? 'The uploaded video clip has been received and is ready for plant disease inspection.'
-        : 'The uploaded image shows symptoms consistent with Tomato Late Blight, including dark lesions and leaf deterioration.',
+        ? "The uploaded video clip has been received and is ready for plant disease inspection."
+        : "The uploaded image shows symptoms consistent with Tomato Late Blight, including dark lesions and leaf deterioration.",
       treatments: [
-        'Inspect the affected leaves closely',
-        'Apply the recommended treatment plan',
-        'Monitor the plant over the next few days',
+        "Inspect the affected leaves closely",
+        "Apply the recommended treatment plan",
+        "Monitor the plant over the next few days",
       ],
-    })
-    scrollToBottom()
-  }, 600)
-}
+    });
+    scrollToBottom();
+  }, 600);
+};
 
 const sendMessage = async () => {
-  const content = message.value.trim()
-  const attachments = uploadQueue.value.filter((item) => (
-    item.mode === 'agent-image' || item.mode === 'camera'
-  ))
+  const content = message.value.trim();
+  const attachments = uploadQueue.value.filter(
+    (item) => item.mode === "agent-image" || item.mode === "camera",
+  );
 
-  if (!content && !attachments.length) return
-  if (attachments.some((item) => item.status !== 'success')) return
+  if (!content && !attachments.length) return;
+  if (attachments.some((item) => item.status !== "success")) return;
 
   // 手动拍照且没有额外提示词：发送时改走快捷 YOLO，不经过 Agent/LLM。
-  if (!content && attachments.length === 1 && attachments[0].mode === 'camera') {
-    const cameraAttachment = attachments[0]
-    const cameraFile = cameraAttachment.file
+  if (
+    !content &&
+    attachments.length === 1 &&
+    attachments[0].mode === "camera"
+  ) {
+    const cameraAttachment = attachments[0];
+    const cameraFile = cameraAttachment.file;
 
-    uploadQueue.value = uploadQueue.value.filter((item) => item.id !== cameraAttachment.id)
-    if (cameraAttachment.previewUrl?.startsWith('blob:')) {
-      URL.revokeObjectURL(cameraAttachment.previewUrl)
+    uploadQueue.value = uploadQueue.value.filter(
+      (item) => item.id !== cameraAttachment.id,
+    );
+    if (cameraAttachment.previewUrl?.startsWith("blob:")) {
+      URL.revokeObjectURL(cameraAttachment.previewUrl);
     }
 
-    await handleQuickDetect('single', [cameraFile])
-    return
+    await handleQuickDetect("single", [cameraFile]);
+    return;
   }
 
-  agentStore.abort()
+  agentStore.abort();
 
   // /api/chat/upload 返回服务器临时路径；单附件和多附件分别传给对应字段。
-  const attachmentPaths = attachments.map((item) => (
-    item.uploadResult?.image_path
-    || item.uploadResult?.data?.image_path
-    || item.uploadUrl
-  )).filter(Boolean)
-  const imagePath = attachmentPaths.length === 1 ? attachmentPaths[0] : null
-  const imagePaths = attachmentPaths.length > 1 ? attachmentPaths : null
-  const attachmentUrls = attachments.map((item) => (
-    item.uploadResult?.attachment_url
-    || item.uploadResult?.data?.attachment_url
-  )).filter(Boolean)
+  const attachmentPaths = attachments
+    .map(
+      (item) =>
+        item.uploadResult?.image_path ||
+        item.uploadResult?.data?.image_path ||
+        item.uploadUrl,
+    )
+    .filter(Boolean);
+  const imagePath = attachmentPaths.length === 1 ? attachmentPaths[0] : null;
+  const imagePaths = attachmentPaths.length > 1 ? attachmentPaths : null;
+  const attachmentUrls = attachments
+    .map(
+      (item) =>
+        item.uploadResult?.attachment_url ||
+        item.uploadResult?.data?.attachment_url,
+    )
+    .filter(Boolean);
 
   const userMessage = {
-    role: 'user',
-    content: content || '请帮我分析这张图片',
-  }
+    role: "user",
+    content: content || "请帮我分析这张图片",
+  };
 
   if (attachments.length === 1) {
-    userMessage.type = 'image'
-    userMessage.imageUrl = attachments[0].previewUrl
+    userMessage.type = "image";
+    userMessage.imageUrl = attachments[0].previewUrl;
   } else if (attachments.length > 1) {
-    userMessage.images = attachments.map((item) => item.previewUrl)
+    userMessage.images = attachments.map((item) => item.previewUrl);
   }
 
-  agentStore.addMessage(userMessage)
+  agentStore.addMessage(userMessage);
 
   agentStore.addMessage({
-    role: 'assistant',
-    type: attachments.length ? 'agent-analysis' : undefined,
-    agentPrompt: attachments.length ? userMessage.content : '',
-    inputImage: attachments[0]?.previewUrl || '',
+    role: "assistant",
+    type: attachments.length ? "agent-analysis" : undefined,
+    agentPrompt: attachments.length ? userMessage.content : "",
+    inputImage: attachments[0]?.previewUrl || "",
     modelThinking: false,
-    content: '',
+    content: "",
     loading: true,
-  })
-  const assistantMessage = agentStore.messages[agentStore.messages.length - 1]
-  agentStore.setLoading(true)
+  });
+  const assistantMessage = agentStore.messages[agentStore.messages.length - 1];
+  agentStore.setLoading(true);
 
-  scrollToBottom()
+  scrollToBottom();
 
-  message.value = ''
+  message.value = "";
   // 从输入区移除，但不释放 blob URL，因为它已用于消息预览。
-  uploadQueue.value = uploadQueue.value.filter((item) => (
-    item.mode !== 'agent-image' && item.mode !== 'camera'
-  ))
+  uploadQueue.value = uploadQueue.value.filter(
+    (item) => item.mode !== "agent-image" && item.mode !== "camera",
+  );
 
   const stop = streamChat(
-    '/api/chat/stream',
+    "/api/chat/stream",
     {
       message: userMessage.content,
       image_path: imagePath,
@@ -837,200 +910,211 @@ const sendMessage = async () => {
     },
     {
       onMessage: (event) => {
-        if (event.type === 'text_chunk' || typeof event.content === 'string') {
+        if (event.type === "text_chunk" || typeof event.content === "string") {
           if (assistantMessage.detectionResult && event.content) {
-            assistantMessage.modelThinking = false
+            assistantMessage.modelThinking = false;
           }
-          assistantMessage.content += event.content || ''
+          assistantMessage.content += event.content || "";
         }
 
         if (event.session_id) {
-          agentStore.currentSessionId = event.session_id
+          agentStore.currentSessionId = event.session_id;
         }
 
-        if (event.type === 'tool_result' && event.result) {
+        if (event.type === "tool_result" && event.result) {
           try {
-            const detectionResult = typeof event.result === 'string'
-              ? JSON.parse(event.result)
-              : event.result
+            const detectionResult =
+              typeof event.result === "string"
+                ? JSON.parse(event.result)
+                : event.result;
 
-            assistantMessage.type = 'agent-analysis'
-            assistantMessage.detectionResult = detectionResult
-            assistantMessage.modelThinking = true
+            assistantMessage.type = "agent-analysis";
+            assistantMessage.detectionResult = detectionResult;
+            assistantMessage.modelThinking = true;
           } catch (error) {
-            console.error('[Agent 检测结果解析失败]', error, event.result)
+            console.error("[Agent 检测结果解析失败]", error, event.result);
           }
-        } else if (event.type === 'diagnosis' || event.detectionResult) {
-          assistantMessage.type = 'agent-analysis'
-          assistantMessage.detectionResult = event.detectionResult || event
-          assistantMessage.modelThinking = true
+        } else if (event.type === "diagnosis" || event.detectionResult) {
+          assistantMessage.type = "agent-analysis";
+          assistantMessage.detectionResult = event.detectionResult || event;
+          assistantMessage.modelThinking = true;
         }
 
-        scrollToBottom()
+        scrollToBottom();
       },
       onDone: async () => {
-        assistantMessage.loading = false
-        assistantMessage.modelThinking = false
-        agentStore.setLoading(false)
-        agentStore.abortController = null
+        assistantMessage.loading = false;
+        assistantMessage.modelThinking = false;
+        agentStore.setLoading(false);
+        agentStore.abortController = null;
 
         if (!assistantMessage.content) {
           assistantMessage.content = assistantMessage.detectionResult
-            ? 'YOLO 检测已完成，但大模型暂未返回分析内容。'
-            : '分析已完成'
+            ? "YOLO 检测已完成，但大模型暂未返回分析内容。"
+            : "分析已完成";
         }
 
-        await agentStore.loadSessions()
-        scrollToBottom()
+        await agentStore.loadSessions();
+        scrollToBottom();
       },
       onError: (error) => {
-        assistantMessage.loading = false
-        assistantMessage.modelThinking = false
-        assistantMessage.error = true
-        assistantMessage.content = `Agent 请求失败：${getErrorMessage(error)}`
-        agentStore.setLoading(false)
-        agentStore.abortController = null
-        scrollToBottom()
+        assistantMessage.loading = false;
+        assistantMessage.modelThinking = false;
+        assistantMessage.error = true;
+        assistantMessage.content = `Agent 请求失败：${getErrorMessage(error)}`;
+        agentStore.setLoading(false);
+        agentStore.abortController = null;
+        scrollToBottom();
       },
     },
-  )
+  );
 
-  agentStore.abortController = stop
-}
+  agentStore.abortController = stop;
+};
 
 onMounted(async () => {
-  await agentStore.loadSessions()
-  const pendingPrompt = agentStore.consumePendingPrompt()
+  await agentStore.loadSessions();
+  const pendingPrompt = agentStore.consumePendingPrompt();
 
-  if (!pendingPrompt) return
+  if (!pendingPrompt) return;
 
-  const pendingFiles = Array.from(pendingPrompt.files || [])
+  const pendingFiles = Array.from(pendingPrompt.files || []);
 
-  if (pendingPrompt.mode === 'agent-image' && pendingFiles.length) {
-    setUploadMode('agent-image')
-    const pendingItems = pendingFiles.slice(0, 1).map((file) => createUploadItem(file))
-    message.value = pendingPrompt.content || '请帮我分析这张图片'
-    await Promise.all(pendingItems.map((item) => item.uploadPromise))
+  if (pendingPrompt.mode === "agent-image" && pendingFiles.length) {
+    setUploadMode("agent-image");
+    const pendingItems = pendingFiles
+      .slice(0, 1)
+      .map((file) => createUploadItem(file));
+    message.value = pendingPrompt.content || "请帮我分析这张图片";
+    await Promise.all(pendingItems.map((item) => item.uploadPromise));
 
-    if (pendingItems.every((item) => item.status === 'success')) {
-      await sendMessage()
+    if (pendingItems.every((item) => item.status === "success")) {
+      await sendMessage();
     }
-    return
+    return;
   }
 
-  if (pendingPrompt.mode === 'image' && pendingFiles.length) {
-    await handleQuickDetect('single', pendingFiles)
-    return
+  if (pendingPrompt.mode === "image" && pendingFiles.length) {
+    await handleQuickDetect("single", pendingFiles);
+    return;
   }
 
-  if (pendingPrompt.mode === 'batch' && pendingFiles.length) {
-    await handleQuickDetect('batch', pendingFiles)
-    return
+  if (pendingPrompt.mode === "batch" && pendingFiles.length) {
+    await handleQuickDetect("batch", pendingFiles);
+    return;
   }
 
-  if (pendingPrompt.mode === 'video' && pendingFiles.length) {
-    await handleVideoDetect(pendingFiles[0])
-    return
+  if (pendingPrompt.mode === "video" && pendingFiles.length) {
+    await handleVideoDetect(pendingFiles[0]);
+    return;
   }
 
-  if (pendingPrompt.mode === 'camera') {
-    message.value = pendingPrompt.content || ''
-    await nextTick()
-    handleUploadModeSelection('camera')
-    return
+  if (pendingPrompt.mode === "camera") {
+    message.value = pendingPrompt.content || "";
+    await nextTick();
+    handleUploadModeSelection("camera");
+    return;
   }
 
-  if (pendingPrompt.mode === 'realtime-camera') {
-    handleUploadModeSelection('realtime-camera')
-    return
+  if (pendingPrompt.mode === "realtime-camera") {
+    handleUploadModeSelection("realtime-camera");
+    return;
   }
 
-  if (!pendingPrompt.content) return
+  if (!pendingPrompt.content) return;
 
-  message.value = pendingPrompt.content
-  await nextTick()
-  await sendMessage()
-})
+  message.value = pendingPrompt.content;
+  await nextTick();
+  await sendMessage();
+});
 
 onBeforeUnmount(() => {
-  activeVideoPolls.clear()
-})
+  activeVideoPolls.clear();
+});
 
 const useSuggestion = (text) => {
-  message.value = text
-  sendMessage()
-}
+  message.value = text;
+  sendMessage();
+};
 
 const startNewDiagnosis = () => {
   messages.value.forEach((item) => {
-    if (item.imagePreview?.startsWith('blob:')) URL.revokeObjectURL(item.imagePreview)
-    if (item.imageUrl?.startsWith('blob:')) URL.revokeObjectURL(item.imageUrl)
-    if (item.videoUrl?.startsWith('blob:')) URL.revokeObjectURL(item.videoUrl)
+    if (item.imagePreview?.startsWith("blob:"))
+      URL.revokeObjectURL(item.imagePreview);
+    if (item.imageUrl?.startsWith("blob:")) URL.revokeObjectURL(item.imageUrl);
+    if (item.videoUrl?.startsWith("blob:")) URL.revokeObjectURL(item.videoUrl);
     item.images?.forEach((url) => {
-      if (url.startsWith('blob:')) URL.revokeObjectURL(url)
-    })
-  })
-  agentStore.newChat()
+      if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+    });
+  });
+  agentStore.newChat();
   uploadQueue.value.forEach((item) => {
     if (item.timer) {
-      window.clearInterval(item.timer)
+      window.clearInterval(item.timer);
     }
     if (item.previewUrl) {
-      URL.revokeObjectURL(item.previewUrl)
+      URL.revokeObjectURL(item.previewUrl);
     }
-  })
-  uploadQueue.value = []
-  message.value = ''
-  showUploadMenu.value = false
-  showCameraModal.value = false
-  cameraError.value = ''
-}
+  });
+  uploadQueue.value = [];
+  message.value = "";
+  showUploadMenu.value = false;
+  showCameraModal.value = false;
+  cameraError.value = "";
+};
 
 const handleSelectSession = async (sessionId) => {
-  if (sessionId === currentSessionId.value) return
+  if (sessionId === currentSessionId.value) return;
 
-  agentStore.abort()
+  agentStore.abort();
   messages.value.forEach((item) => {
-    if (item.imagePreview?.startsWith('blob:')) URL.revokeObjectURL(item.imagePreview)
-    if (item.imageUrl?.startsWith('blob:')) URL.revokeObjectURL(item.imageUrl)
-    if (item.videoUrl?.startsWith('blob:')) URL.revokeObjectURL(item.videoUrl)
+    if (item.imagePreview?.startsWith("blob:"))
+      URL.revokeObjectURL(item.imagePreview);
+    if (item.imageUrl?.startsWith("blob:")) URL.revokeObjectURL(item.imageUrl);
+    if (item.videoUrl?.startsWith("blob:")) URL.revokeObjectURL(item.videoUrl);
     item.images?.forEach((url) => {
-      if (url.startsWith('blob:')) URL.revokeObjectURL(url)
-    })
-  })
+      if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+    });
+  });
 
   uploadQueue.value.forEach((item) => {
-    if (item.timer) window.clearInterval(item.timer)
-    if (item.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(item.previewUrl)
-  })
-  uploadQueue.value = []
-  message.value = ''
-  showUploadMenu.value = false
-  closeCameraModal()
+    if (item.timer) window.clearInterval(item.timer);
+    if (item.previewUrl?.startsWith("blob:"))
+      URL.revokeObjectURL(item.previewUrl);
+  });
+  uploadQueue.value = [];
+  message.value = "";
+  showUploadMenu.value = false;
+  closeCameraModal();
 
-  await agentStore.loadSessionMessages(sessionId)
-  await scrollToBottom()
-}
+  await agentStore.loadSessionMessages(sessionId);
+  await scrollToBottom();
+};
 
 const handleDeleteSession = async (sessionId) => {
-  const deletingCurrent = String(sessionId) === String(currentSessionId.value)
-  const deleted = await agentStore.deleteSession(sessionId)
+  const deletingCurrent = String(sessionId) === String(currentSessionId.value);
+  const deleted = await agentStore.deleteSession(sessionId);
 
   if (deleted && deletingCurrent) {
     uploadQueue.value.forEach((item) => {
-      if (item.timer) window.clearInterval(item.timer)
-      if (item.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(item.previewUrl)
-    })
-    uploadQueue.value = []
-    message.value = ''
-    showUploadMenu.value = false
-    closeCameraModal()
+      if (item.timer) window.clearInterval(item.timer);
+      if (item.previewUrl?.startsWith("blob:"))
+        URL.revokeObjectURL(item.previewUrl);
+    });
+    uploadQueue.value = [];
+    message.value = "";
+    showUploadMenu.value = false;
+    closeCameraModal();
   }
-}
+};
 
 const handleRenameSession = async (sessionId, newTitle) => {
-  await agentStore.renameSession(sessionId, newTitle)
-}
+  await agentStore.renameSession(sessionId, newTitle);
+};
+
+const handleTogglePin = async (sessionId) => {
+  await agentStore.togglePinSession(sessionId);
+};
 </script>
 
 <style scoped>
@@ -1070,5 +1154,4 @@ const handleRenameSession = async (sessionId, newTitle) => {
   color: #6b7280;
   font-weight: 600;
 }
-
 </style>

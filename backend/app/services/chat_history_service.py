@@ -1,5 +1,6 @@
 """持久化对话会话与消息服务。"""
 
+import json
 from datetime import datetime
 from uuid import uuid4
 
@@ -10,18 +11,45 @@ from app.entity.db_models import ChatMessage, ChatSession
 class ChatHistoryService:
     """数据库是长期会话来源，Redis 只保存一小时的活跃上下文。"""
 
-    @staticmethod
-    def _session_payload(session: ChatSession) -> dict:
+    def _session_payload(self, session: ChatSession, detection_summary: dict | None = None) -> dict:
+        if detection_summary is None:
+            db = SessionLocal()
+            try:
+                last_detection = (
+                    db.query(ChatMessage)
+                    .filter(ChatMessage.session_id == session.id)
+                    .filter(ChatMessage.role == "assistant")
+                    .filter(ChatMessage.tool_result.isnot(None))
+                    .order_by(ChatMessage.created_at.desc())
+                    .first()
+                )
+                if last_detection and last_detection.tool_result:
+                    try:
+                        tool_result = json.loads(last_detection.tool_result)
+                        if isinstance(tool_result, dict) and "total_objects" in tool_result:
+                            detection_summary = {
+                                "total_objects": tool_result.get("total_objects", 0),
+                                "total_images": tool_result.get("total_images", 1),
+                                "scene_name": tool_result.get("scene_name", ""),
+                                "class_counts": tool_result.get("class_counts", {}),
+                            }
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+            finally:
+                db.close()
+
         return {
             "id": session.id,
             "session_uuid": session.session_uuid,
             "title": session.title,
             "status": session.status,
+            "is_pinned": session.is_pinned or False,
             "message_count": session.message_count or 0,
             "last_message_at": session.last_message_at.isoformat()
             if session.last_message_at
             else None,
             "created_at": session.created_at.isoformat() if session.created_at else None,
+            "detection_summary": detection_summary,
         }
 
     @staticmethod
@@ -142,10 +170,66 @@ class ChatHistoryService:
             sessions = (
                 db.query(ChatSession)
                 .filter(ChatSession.user_id == user_id, ChatSession.status == "active")
-                .order_by(ChatSession.last_message_at.desc(), ChatSession.created_at.desc())
+                .order_by(ChatSession.is_pinned.desc(), ChatSession.last_message_at.desc(), ChatSession.created_at.desc())
                 .all()
             )
-            return [self._session_payload(session) for session in sessions]
+
+            session_ids = [session.id for session in sessions]
+            detection_summary_map = {}
+            if session_ids:
+                subq = (
+                    db.query(
+                        ChatMessage.session_id,
+                        ChatMessage.tool_result,
+                        ChatMessage.created_at,
+                        ChatMessage.id,
+                    )
+                    .filter(ChatMessage.session_id.in_(session_ids))
+                    .filter(ChatMessage.role == "assistant")
+                    .filter(ChatMessage.tool_result.isnot(None))
+                    .order_by(ChatMessage.session_id, ChatMessage.created_at.desc(), ChatMessage.id.desc())
+                ).subquery()
+
+                latest_detections = (
+                    db.query(subq)
+                    .distinct(subq.c.session_id)
+                    .all()
+                )
+
+                for det in latest_detections:
+                    try:
+                        tool_result = json.loads(det.tool_result)
+                        if isinstance(tool_result, dict) and "total_objects" in tool_result:
+                            detection_summary_map[det.session_id] = {
+                                "total_objects": tool_result.get("total_objects", 0),
+                                "total_images": tool_result.get("total_images", 1),
+                                "scene_name": tool_result.get("scene_name", ""),
+                                "class_counts": tool_result.get("class_counts", {}),
+                            }
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+            return [self._session_payload(session, detection_summary_map.get(session.id)) for session in sessions]
+        finally:
+            db.close()
+
+    def toggle_pin_session(self, user_id: int, session_uuid: str) -> dict | None:
+        db = SessionLocal()
+        try:
+            session = (
+                db.query(ChatSession)
+                .filter(
+                    ChatSession.user_id == user_id,
+                    ChatSession.session_uuid == session_uuid,
+                )
+                .first()
+            )
+            if not session:
+                return None
+            session.is_pinned = not session.is_pinned
+            db.commit()
+            db.refresh(session)
+            return self._session_payload(session)
         finally:
             db.close()
 

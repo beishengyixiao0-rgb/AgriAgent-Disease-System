@@ -3,10 +3,10 @@
     <router-link to="/" class="brand"> 🌿 AgriAgent </router-link>
 
     <button class="new-chat" @click="$emit('new-diagnosis')">
-      ＋ {{ tr('sidebar.newDiagnosis') }}
+      ＋ {{ tr("sidebar.newDiagnosis") }}
     </button>
 
-    <div class="sidebar-section-title">{{ tr('sidebar.recent') }}</div>
+    <div class="sidebar-section-title">{{ tr("sidebar.recent") }}</div>
 
     <div class="session-list">
       <div
@@ -15,15 +15,39 @@
         class="session-item"
         :class="{
           active: String(currentSessionId) === String(sessionKey(session)),
+          pinned: session.is_pinned,
         }"
         :data-session-id="sessionKey(session)"
         @click="$emit('select-session', sessionKey(session))"
       >
         <div class="session-content">
-          <span class="session-title">{{ session.title || tr('sidebar.newChat') }}</span>
+          <span v-if="session.is_pinned" class="pin-icon">📌</span>
+          <span v-if="session.detection_summary" class="detection-icon"
+            >🔍</span
+          >
+          <span class="session-title"
+            >{{ session.title || tr("sidebar.newChat") }}
+          </span>
+        </div>
+        <div v-if="session.detection_summary" class="detection-summary">
+          <span class="detection-count">
+            {{
+              tr("sidebar.detectionObjects", {
+                count: session.detection_summary.total_objects || 0,
+              })
+            }}
+          </span>
+          <span
+            v-if="session.detection_summary.scene_name"
+            class="detection-scene"
+          >
+            {{ session.detection_summary.scene_name }}
+          </span>
         </div>
         <div class="session-meta">
-          <span class="session-count">{{ tr('sidebar.messageCount', { count: session.message_count ?? 0 }) }}</span>
+          <span class="session-count">{{
+            tr("sidebar.messageCount", { count: session.message_count ?? 0 })
+          }}</span>
           <span class="session-time">{{
             formatTime(session.last_message_at)
           }}</span>
@@ -41,19 +65,19 @@
 
       <div v-if="sessions.length === 0" class="empty-sessions">
         <div class="empty-icon">💬</div>
-        <div class="empty-text">{{ tr('sidebar.empty') }}</div>
+        <div class="empty-text">{{ tr("sidebar.empty") }}</div>
       </div>
     </div>
 
     <div class="sidebar-bottom">
-      <div class="sidebar-section-title">{{ tr('sidebar.navigation') }}</div>
+      <div class="sidebar-section-title">{{ tr("sidebar.navigation") }}</div>
 
       <router-link
         to="/ai-chat"
         class="nav-item"
         active-class="nav-item-active"
       >
-        🤖 {{ tr('sidebar.smartDiagnosis') }}
+        🤖 {{ tr("sidebar.smartDiagnosis") }}
       </router-link>
 
       <router-link
@@ -61,7 +85,7 @@
         class="nav-item"
         active-class="nav-item-active"
       >
-        📊 {{ tr('sidebar.analytics') }}
+        📊 {{ tr("sidebar.analytics") }}
       </router-link>
 
       <router-link
@@ -69,7 +93,7 @@
         class="nav-item"
         active-class="nav-item-active"
       >
-        🕒 {{ tr('sidebar.detectionHistory') }}
+        🕒 {{ tr("sidebar.detectionHistory") }}
       </router-link>
     </div>
   </aside>
@@ -81,12 +105,16 @@
       :style="dropdownStyle"
       @click.stop
     >
+      <button type="button" class="dropdown-item" @click="handlePin">
+        {{ activeSession?.is_pinned ? "📌" : "📌" }}
+        {{ activeSession?.is_pinned ? tr("sidebar.unpin") : tr("sidebar.pin") }}
+      </button>
       <button type="button" class="dropdown-item" @click="handleRename">
-        ✏️ {{ tr('sidebar.rename') }}
+        ✏️ {{ tr("sidebar.rename") }}
       </button>
       <div class="dropdown-divider"></div>
       <button type="button" class="dropdown-item danger" @click="handleDelete">
-        🗑️ {{ tr('sidebar.delete') }}
+        🗑️ {{ tr("sidebar.delete") }}
       </button>
     </div>
   </Teleport>
@@ -107,12 +135,12 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
-import { useLocaleStore } from '@/stores/locale'
-import { t } from '@/utils/i18n'
+import { useLocaleStore } from "@/stores/locale";
+import { t } from "@/utils/i18n";
+import { computed, nextTick, onBeforeUnmount, ref } from "vue";
 
-const localeStore = useLocaleStore()
-const tr = (key, params) => t(key, localeStore.locale, params)
+const localeStore = useLocaleStore();
+const tr = (key, params) => t(key, localeStore.locale, params);
 
 const props = defineProps({
   sessions: {
@@ -123,31 +151,35 @@ const props = defineProps({
     type: [Number, String],
     default: null,
   },
-})
+});
 
 const emit = defineEmits([
-  'new-diagnosis',
-  'select-session',
-  'delete-session',
-  'rename-session',
-])
+  "new-diagnosis",
+  "select-session",
+  "delete-session",
+  "rename-session",
+  "toggle-pin",
+]);
 
-const editingSessionId = ref(null)
-const editTitle = ref('')
-const activeMenuSessionId = ref(null)
-const menuPosition = ref({ x: 0, y: 0 })
-const editInputRef = ref(null)
+const editingSessionId = ref(null);
+const editTitle = ref("");
+const activeMenuSessionId = ref(null);
+const menuPosition = ref({ x: 0, y: 0 });
+const editInputRef = ref(null);
 
-const activeSession = computed(() => props.sessions.find(
-  (session) => String(sessionKey(session)) === String(activeMenuSessionId.value),
-))
+const activeSession = computed(() =>
+  props.sessions.find(
+    (session) =>
+      String(sessionKey(session)) === String(activeMenuSessionId.value),
+  ),
+);
 
-const sessionKey = (session) => session?.session_uuid ?? session?.id
+const sessionKey = (session) => session?.session_uuid ?? session?.id;
 
 const dropdownStyle = computed(() => ({
   left: `${menuPosition.value.x}px`,
   top: `${menuPosition.value.y}px`,
-}))
+}));
 
 const formatTime = (timestamp) => {
   if (!timestamp) return "";
@@ -158,81 +190,89 @@ const formatTime = (timestamp) => {
   const hours = Math.floor(diff / 3600000);
   const days = Math.floor(diff / 86400000);
 
-  if (minutes < 1) return tr('time.now');
-  if (minutes < 60) return tr('time.minutesAgo', { count: minutes });
-  if (hours < 24) return tr('time.hoursAgo', { count: hours });
-  if (days < 7) return tr('time.daysAgo', { count: days });
-  return date.toLocaleDateString(localeStore.locale === 'en' ? 'en-US' : 'zh-CN');
-}
+  if (minutes < 1) return tr("time.now");
+  if (minutes < 60) return tr("time.minutesAgo", { count: minutes });
+  if (hours < 24) return tr("time.hoursAgo", { count: hours });
+  if (days < 7) return tr("time.daysAgo", { count: days });
+  return date.toLocaleDateString(
+    localeStore.locale === "en" ? "en-US" : "zh-CN",
+  );
+};
 
 const closeMenu = () => {
-  activeMenuSessionId.value = null
-  document.removeEventListener('click', closeMenu)
-}
+  activeMenuSessionId.value = null;
+  document.removeEventListener("click", closeMenu);
+};
 
 const toggleMenu = (sessionId, event) => {
   if (String(activeMenuSessionId.value) === String(sessionId)) {
-    closeMenu()
-    return
+    closeMenu();
+    return;
   }
 
-  const rect = event.currentTarget.getBoundingClientRect()
+  const rect = event.currentTarget.getBoundingClientRect();
   menuPosition.value = {
     x: Math.max(12, Math.min(window.innerWidth - 156, rect.right - 144)),
     y: Math.max(12, Math.min(window.innerHeight - 160, rect.top + 8)),
-  }
-  activeMenuSessionId.value = sessionId
+  };
+  activeMenuSessionId.value = sessionId;
 
-  document.removeEventListener('click', closeMenu)
-  window.setTimeout(() => document.addEventListener('click', closeMenu), 0)
-}
+  document.removeEventListener("click", closeMenu);
+  window.setTimeout(() => document.addEventListener("click", closeMenu), 0);
+};
+
+const handlePin = () => {
+  const sessionId = activeMenuSessionId.value;
+  closeMenu();
+  if (sessionId !== null) emit("toggle-pin", sessionId);
+};
 
 const handleRename = () => {
-  const sessionId = activeMenuSessionId.value
-  const session = activeSession.value
-  if (sessionId === null || !session) return
+  const sessionId = activeMenuSessionId.value;
+  const session = activeSession.value;
+  if (sessionId === null || !session) return;
 
-  editingSessionId.value = sessionId
-  editTitle.value = session.title || ''
-  closeMenu()
+  editingSessionId.value = sessionId;
+  editTitle.value = session.title || "";
+  closeMenu();
 
   nextTick(() => {
-    const input = editInputRef.value
-    const item = document.querySelector(`[data-session-id="${sessionId}"]`)
-    if (!input || !item) return
+    const input = editInputRef.value;
+    const item = document.querySelector(`[data-session-id="${sessionId}"]`);
+    if (!input || !item) return;
 
-    const rect = item.getBoundingClientRect()
-    input.style.left = `${rect.left + 12}px`
-    input.style.top = `${rect.top + 8}px`
-    input.style.width = `${Math.max(140, rect.width - 24)}px`
-    input.focus()
-    input.select()
-  })
-}
+    const rect = item.getBoundingClientRect();
+    input.style.left = `${rect.left + 12}px`;
+    input.style.top = `${rect.top + 8}px`;
+    input.style.width = `${Math.max(140, rect.width - 24)}px`;
+    input.focus();
+    input.select();
+  });
+};
 
 const cancelEdit = () => {
-  editingSessionId.value = null
-  editTitle.value = ''
-}
+  editingSessionId.value = null;
+  editTitle.value = "";
+};
 
 const saveEdit = () => {
-  const sessionId = editingSessionId.value
-  const title = editTitle.value.trim()
-  if (sessionId !== null && title) emit('rename-session', sessionId, title)
-  cancelEdit()
-}
+  const sessionId = editingSessionId.value;
+  const title = editTitle.value.trim();
+  if (sessionId !== null && title) emit("rename-session", sessionId, title);
+  cancelEdit();
+};
 
 const handleDelete = () => {
-  const sessionId = activeMenuSessionId.value
-  closeMenu()
-  if (sessionId !== null && window.confirm(tr('sidebar.deleteConfirm'))) {
-    emit('delete-session', sessionId)
+  const sessionId = activeMenuSessionId.value;
+  closeMenu();
+  if (sessionId !== null && window.confirm(tr("sidebar.deleteConfirm"))) {
+    emit("delete-session", sessionId);
   }
-}
+};
 
 onBeforeUnmount(() => {
-  document.removeEventListener('click', closeMenu)
-})
+  document.removeEventListener("click", closeMenu);
+});
 </script>
 
 <style scoped>
@@ -301,20 +341,46 @@ onBeforeUnmount(() => {
   border-color: #16a34a;
 }
 
-.session-content {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding-right: 26px;
+.session-item.pinned {
+  border-color: #f59e0b;
+  background: #fffbeb;
 }
 
-.session-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #374151;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.session-item.pinned:hover {
+  border-color: #d97706;
+}
+
+.pin-icon {
+  font-size: 12px;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
+.detection-icon {
+  font-size: 12px;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
+.detection-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  margin-top: 4px;
+  padding-right: 24px;
+}
+
+.detection-count {
+  color: #16a34a;
+  font-weight: 500;
+  background: #dcfce7;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.detection-scene {
+  color: #6b7280;
 }
 
 .session-meta {

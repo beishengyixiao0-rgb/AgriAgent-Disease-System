@@ -256,7 +256,14 @@ async def save_quick_detection(
     if chat_history_service.ensure_session(current_user.id, session_id) is None:
         raise HTTPException(status_code=404, detail="会话不存在或无权访问")
 
-    # 原图 URL 放在用户消息元数据中，检测结果放在助手消息元数据中，前端恢复时分别渲染。
+    saved_result = detection_result.copy()
+    if "annotated_image_base64" in saved_result:
+        del saved_result["annotated_image_base64"]
+    if saved_result.get("annotated_images"):
+        for img in saved_result["annotated_images"]:
+            if "annotated_image_base64" in img:
+                del img["annotated_image_base64"]
+
     chat_history_service.append_message(
         current_user.id,
         session_id,
@@ -269,7 +276,7 @@ async def save_quick_detection(
         session_id,
         "assistant",
         assistant_content,
-        tool_result=json.dumps(detection_result, ensure_ascii=False),
+        tool_result=json.dumps(saved_result, ensure_ascii=False),
     )
     return {"session_id": session_id}
 
@@ -321,6 +328,15 @@ async def rename_chat_session(
     if not title or len(title) > 200:
         raise HTTPException(status_code=400, detail="会话标题长度应为 1-200 个字符")
     session = chat_history_service.rename_session(current_user.id, session_id, title)
+    if session is None:
+        raise HTTPException(status_code=404, detail="会话不存在或无权访问")
+    return session
+
+
+@router.patch("/sessions/{session_id}/pin", summary="切换会话置顶状态")
+async def toggle_pin_session(session_id: str, current_user=Depends(get_current_user)):
+    session_id = _validated_session_id(session_id)
+    session = chat_history_service.toggle_pin_session(current_user.id, session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="会话不存在或无权访问")
     return session
