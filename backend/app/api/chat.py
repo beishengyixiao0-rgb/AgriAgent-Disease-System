@@ -21,6 +21,7 @@ import uuid
 from pathlib import Path
 
 from app.agent.detection_agent import detection_agent
+from app.agent.multi_agent import multi_agent_chat_stream
 from app.agent.memory import conversation_memory
 from app.api.auth import get_current_user
 from app.core.language import request_language
@@ -211,8 +212,8 @@ async def chat_stream(
                 ensure_ascii=False,
             )
             yield f"data: {session_data}\n\n"
-            # 使用 Agent 流式处理
-            async for event in detection_agent.chat_stream(
+            # 使用多 Agent 流式处理（Supervisor 路由 + 子 Agent 执行）
+            async for event in multi_agent_chat_stream(
                 message=message,
                 image_path=image_path,
                 image_paths=image_paths,
