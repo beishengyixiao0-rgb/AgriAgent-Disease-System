@@ -1,6 +1,7 @@
 """Day11 RAG 知识库与单 Agent 多工具的无外部依赖回归测试。"""
 
 from types import SimpleNamespace
+import asyncio
 
 from app.agent.detection_agent import ALL_TOOLS, detection_agent
 from app.agent.prompts import get_detection_agent_prompt
@@ -274,3 +275,105 @@ def test_chat_stream_passes_admin_flag(client, user_headers, monkeypatch):
 
     assert response.status_code == 200
     assert captured["is_admin"] is False
+
+
+def test_multi_agent_routes_attachment_directly_to_detection(monkeypatch):
+    """带附件路径的请求是明确检测意图，不应依赖 Supervisor 猜路由。"""
+    from app.agent import multi_agent as multi_agent_module
+
+    captured = {}
+
+    async def fail_supervisor(*_args, **_kwargs):
+        raise AssertionError("attachment requests should skip supervisor")
+
+    async def fake_detection_stream(**kwargs):
+        captured.update(kwargs)
+        yield {"type": "text_chunk", "content": "检测完成"}
+
+    monkeypatch.setattr(multi_agent_module, "supervisor_route", fail_supervisor)
+    monkeypatch.setattr(multi_agent_module.detection_agent, "chat_stream", fake_detection_stream)
+
+    async def collect_events():
+        return [
+            event
+            async for event in multi_agent_module.multi_agent_chat_stream(
+                message="检测这个附件",
+                image_path="/tmp/rsod_uploads/test.jpg",
+                user_id=1,
+                session_id="session_1",
+            )
+        ]
+
+    events = asyncio.run(collect_events())
+
+    assert events == [{"type": "text_chunk", "content": "检测完成"}]
+    assert captured["image_path"] == "/tmp/rsod_uploads/test.jpg"
+
+
+def test_multi_agent_routes_analysis_keywords_without_supervisor(monkeypatch):
+    """检测统计和用户列表是明确分析意图，不应依赖 Supervisor 猜路由。"""
+    from app.agent import multi_agent as multi_agent_module
+
+    captured = []
+
+    async def fail_supervisor(*_args, **_kwargs):
+        raise AssertionError("analysis keyword requests should skip supervisor")
+
+    async def fake_analysis_stream(**kwargs):
+        captured.append(kwargs["message"])
+        yield {"type": "text_chunk", "content": "分析完成"}
+
+    monkeypatch.setattr(multi_agent_module, "supervisor_route", fail_supervisor)
+    monkeypatch.setattr(multi_agent_module.analysis_agent, "chat_stream", fake_analysis_stream)
+
+    async def collect_for(message):
+        return [
+            event
+            async for event in multi_agent_module.multi_agent_chat_stream(
+                message=message,
+                user_id=1,
+                session_id="session_1",
+                is_admin=True,
+            )
+        ]
+
+    assert asyncio.run(collect_for("我检测了多少次")) == [{"type": "text_chunk", "content": "分析完成"}]
+    assert asyncio.run(collect_for("给出用户列表")) == [{"type": "text_chunk", "content": "分析完成"}]
+    assert captured == ["我检测了多少次", "给出用户列表"]
+
+
+def test_chat_stream_passes_superuser_as_admin(client, db_session, monkeypatch):
+    """兼容旧超级管理员账号：is_superuser 也应进入工具层管理员上下文。"""
+    from app.api import chat as chat_api
+    from app.core.security import create_access_token
+    from app.services import chat_history_service as chat_history_module
+    from app.services.user_service import user_service
+    from tests.conftest import TestSessionLocal
+
+    user_service.ensure_builtin_roles(db_session)
+    user = user_service.register(
+        db_session,
+        username="legacy_superuser",
+        email="legacy_superuser@example.com",
+        password="123456",
+    )
+    user.is_superuser = True
+    db_session.commit()
+    db_session.refresh(user)
+
+    captured = {}
+    monkeypatch.setattr(chat_history_module, "SessionLocal", TestSessionLocal)
+
+    async def fake_chat_stream(**kwargs):
+        captured.update(kwargs)
+        yield {"type": "text_chunk", "content": "测试回复"}
+
+    monkeypatch.setattr(chat_api, "multi_agent_chat_stream", fake_chat_stream)
+    response = client.post(
+        "/api/chat/stream",
+        headers={"Authorization": f"Bearer {create_access_token({'sub': str(user.id)})}"},
+        json={"message": "给出用户列表"},
+    )
+
+    assert response.status_code == 200
+    assert captured["is_admin"] is True

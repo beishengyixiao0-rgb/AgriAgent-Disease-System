@@ -473,6 +473,39 @@ def test_chat_stream_with_real_path(client, monkeypatch, setup_upload_dir):
     assert "data: [DONE]" in response_text
 
 
+def test_chat_stream_accepts_uuid_session_id(client, monkeypatch):
+    """前端会传 session_uuid 字符串，后端请求模型必须放行。"""
+    from app.api import chat
+    from app.services import chat_history_service as chat_history_module
+
+    from tests.conftest import TestSessionLocal
+
+    monkeypatch.setattr(chat_history_module, "SessionLocal", TestSessionLocal)
+
+    headers = auth_headers(client, "day8_uuid_session_user")
+    create_response = client.post("/api/chat/sessions", headers=headers)
+    assert create_response.status_code == 201
+    session_id = create_response.json()["session_uuid"]
+
+    captured = {}
+
+    async def fake_chat_stream(**kwargs):
+        captured.update(kwargs)
+        yield {"type": "text_chunk", "content": "继续会话"}
+
+    monkeypatch.setattr(chat, "multi_agent_chat_stream", fake_chat_stream)
+
+    response = client.post(
+        "/api/chat/stream",
+        headers=headers,
+        json={"message": "继续刚才的话题", "session_id": session_id},
+    )
+
+    assert response.status_code == 200
+    assert captured["session_id"] == session_id
+    assert '"type": "text_chunk"' in response.text
+
+
 # 添加：测试新会话自动创建
 def test_chat_stream_creates_session_if_not_provided(client, monkeypatch):
     """不提供 session_id 时应自动创建新会话"""
