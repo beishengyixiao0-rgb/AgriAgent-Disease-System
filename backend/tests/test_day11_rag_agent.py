@@ -53,7 +53,7 @@ def test_retriever_filters_low_similarity_without_external_calls(monkeypatch):
     monkeypatch.setattr(
         retriever_module.pgvector_client,
         "search",
-        lambda embedding, top_k: [
+        lambda embedding, top_k, filter_metadata=None: [
             {"content": "无关内容", "metadata": {"source": "test.md"}, "similarity": 0.2}
         ],
     )
@@ -77,10 +77,45 @@ def test_retriever_keeps_relevant_similarity_without_external_calls(monkeypatch)
     monkeypatch.setattr(
         retriever_module.pgvector_client,
         "search",
-        lambda embedding, top_k: [expected],
+        lambda embedding, top_k, filter_metadata=None: [expected],
     )
 
     assert retriever.search("什么是 IoU") == [expected]
+
+
+def test_index_document_returns_document_chunk_count(monkeypatch):
+    """单文档索引应返回当前文档分块数，不能用全库向量总数代替。"""
+    retriever = retriever_module.KnowledgeRetriever()
+    inserted = {}
+
+    monkeypatch.setattr(
+        retriever_module.document_loader,
+        "load_single_document",
+        lambda file_path, title: [{"content": "知识库内容", "metadata": {"source": "a.md"}}],
+    )
+    monkeypatch.setattr(
+        retriever_module.document_loader,
+        "split_documents",
+        lambda documents, chunk_size, chunk_overlap: [
+            {"content": "片段1", "metadata": {"source": "a.md"}},
+            {"content": "片段2", "metadata": {"source": "a.md"}},
+        ],
+    )
+    monkeypatch.setattr(
+        retriever_module.embedding_service,
+        "embed_texts",
+        lambda texts: [[0.0] * 1024 for _ in texts],
+    )
+
+    def fake_insert_embeddings(contents, embeddings, metadatas):
+        inserted["metadatas"] = metadatas
+        return True
+
+    monkeypatch.setattr(retriever_module.pgvector_client, "insert_embeddings", fake_insert_embeddings)
+
+    assert retriever.index_document(7, "knowledge/documents/a.md", "测试文档") == 2
+    assert inserted["metadatas"][0]["document_id"] == 7
+    assert inserted["metadatas"][0]["status"] == "approved"
 
 
 def test_embedding_rejects_non_1024_dimension(monkeypatch):
@@ -142,26 +177,83 @@ def test_embedding_search_sql_binds_query_and_limit():
     assert set(text(SEARCH_EMBEDDINGS_SQL)._bindparams) == {"query", "top_k"}
 
 
-def test_knowledge_build_failure_returns_503(client, user_headers, monkeypatch):
-    """任意登录用户可发起建库，但构建失败必须返回真实 HTTP 错误。"""
-    from app.api import knowledge
+def test_knowledge_build_requires_admin(client, user_headers):
+    """全量重建索引属于管理员操作，普通用户不能触发。"""
+    response = client.post("/api/knowledge/build", headers=user_headers)
 
-    monkeypatch.setattr(knowledge.knowledge_retriever, "build_index", lambda **kwargs: False)
+    assert response.status_code == 403
+
+
+def test_knowledge_build_failure_returns_503(client, admin_headers, monkeypatch):
+    """管理员发起建库失败时必须返回真实 HTTP 错误。"""
+    from app.api import knowledge
+    from tests.conftest import TestSessionLocal
+
+    monkeypatch.setattr(knowledge, "SessionLocal", TestSessionLocal)
     monkeypatch.setattr(
         knowledge.knowledge_retriever,
-        "get_stats",
-        lambda: {"total_chunks": 0, "index_built": False},
+        "rebuild_approved_documents",
+        lambda db, force_rebuild=False: {"success": False, "total_chunks": 0, "index_built": False},
     )
 
-    response = client.post("/api/knowledge/build", headers=user_headers)
+    response = client.post("/api/knowledge/build", headers=admin_headers)
 
     assert response.status_code == 503
     # 项目全局异常处理器将 HTTPException.detail 放入统一的 message 字段。
     assert response.json()["message"]["message"] == "知识库索引构建失败"
 
 
+def test_batch_upload_documents_writes_minio_object_names(client, user_headers, monkeypatch):
+    """批量上传应逐个写入 MinIO，并在 file_path 中保存 object_name。"""
+    from app.api import knowledge
+    from app.entity.db_models import KnowledgeDocument
+    from tests.conftest import TestSessionLocal
+
+    uploaded = {}
+
+    class FakeMinIOClient:
+        def upload_bytes(self, object_name, data, content_type="image/jpeg"):
+            uploaded[object_name] = {"data": data, "content_type": content_type}
+            return f"http://minio.test/{object_name}"
+
+        def delete_object(self, object_name):
+            uploaded.pop(object_name, None)
+
+    monkeypatch.setattr(knowledge, "MinIOClient", FakeMinIOClient)
+    monkeypatch.setattr(knowledge, "SessionLocal", TestSessionLocal)
+
+    response = client.post(
+        "/api/knowledge/documents/batch",
+        headers=user_headers,
+        files=[
+            ("files", ("batch_a.md", b"# A\ncontent", "text/markdown")),
+            ("files", ("batch_b.txt", b"B content", "text/plain")),
+            ("files", ("bad.pdf", b"bad", "application/pdf")),
+        ],
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success_count"] == 2
+    assert data["failed_count"] == 1
+    assert len(uploaded) == 2
+
+    db = TestSessionLocal()
+    try:
+        documents = (
+            db.query(KnowledgeDocument)
+            .filter(KnowledgeDocument.file_path.like("knowledge/documents/%"))
+            .all()
+        )
+        assert any(document.file_path.endswith("batch_a.md") for document in documents)
+        assert all(document.status == "pending" for document in documents)
+    finally:
+        db.close()
+
+
 def test_chat_stream_passes_admin_flag(client, user_headers, monkeypatch):
-    """聊天 API 必须把当前用户管理员身份传给 Agent 工具上下文。"""
+    """聊天 API 必须把当前用户管理员身份传给多 Agent 入口。"""
+    from app.api import chat as chat_api
     from app.services import chat_history_service as chat_history_module
     from tests.conftest import TestSessionLocal
 
@@ -173,7 +265,7 @@ def test_chat_stream_passes_admin_flag(client, user_headers, monkeypatch):
         captured.update(kwargs)
         yield {"type": "text_chunk", "content": "测试回复"}
 
-    monkeypatch.setattr(detection_agent, "chat_stream", fake_chat_stream)
+    monkeypatch.setattr(chat_api, "multi_agent_chat_stream", fake_chat_stream)
     response = client.post(
         "/api/chat/stream",
         headers=user_headers,

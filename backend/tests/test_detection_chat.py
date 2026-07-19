@@ -376,7 +376,7 @@ def test_chat_stream_requires_authentication(client):
 
 def test_chat_stream_emits_done(client, monkeypatch):
     """SSE 流式对话应返回 text_chunk 和 [DONE]"""
-    from app.agent.detection_agent import detection_agent
+    from app.api import chat
     from app.services import chat_history_service as chat_history_module
 
     from tests.conftest import TestSessionLocal
@@ -388,11 +388,11 @@ def test_chat_stream_emits_done(client, monkeypatch):
     username = "day8_chat_user"
     headers = auth_headers(client, username)
 
-    # Mock detection_agent 以快速返回
+    # 聊天接口已升级为多 Agent 入口，测试只验证 SSE 外层协议。
     async def fake_chat_stream(**kwargs):
         yield {"type": "text_chunk", "content": "测试回复"}
 
-    monkeypatch.setattr(detection_agent, "chat_stream", fake_chat_stream)
+    monkeypatch.setattr(chat, "multi_agent_chat_stream", fake_chat_stream)
 
     response = client.post(
         "/api/chat/stream",
@@ -424,7 +424,6 @@ def setup_upload_dir():
 
 def test_chat_stream_with_real_path(client, monkeypatch, setup_upload_dir):
     """使用真实存在的路径测试 SSE 流 - 修复版本"""
-    from app.agent.detection_agent import detection_agent
     from app.api import chat
     from app.services import chat_history_service as chat_history_module
 
@@ -451,7 +450,7 @@ def test_chat_stream_with_real_path(client, monkeypatch, setup_upload_dir):
         captured.update(kwargs)
         yield {"type": "text_chunk", "content": "检测完成"}
 
-    monkeypatch.setattr(detection_agent, "chat_stream", fake_chat_stream)
+    monkeypatch.setattr(chat, "multi_agent_chat_stream", fake_chat_stream)
 
     response = client.post(
         "/api/chat/stream",
