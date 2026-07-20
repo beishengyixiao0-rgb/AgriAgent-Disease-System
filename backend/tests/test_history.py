@@ -3,6 +3,8 @@
 """
 
 import pytest
+import base64
+from datetime import datetime
 from app.core.security import create_access_token
 from app.entity.db_models import DetectionResult, DetectionScene, DetectionTask, User
 
@@ -555,11 +557,38 @@ def test_report_preview_and_html_download(client, db_session):
             },
         },
     )
+    task.latitude = 30.52
+    task.longitude = 114.31
+    task.location_name = "试验田 A 区"
+    task.environment_risk_level = "high"
+    task.weather_summary = "未来三天湿度偏高，需要重点观察。"
+    task.weather_recommendations = ["控制棚内湿度", "雨后 48 小时复查"]
+    task.weather_snapshot = {
+        "hourly": {
+            "temperature_2m": [24] * 72,
+            "relative_humidity_2m": [88] * 72,
+            "precipitation": [0.2] * 72,
+            "precipitation_probability": [65] * 72,
+        },
+        "daily": {"precipitation_sum": [3, 4, 5]},
+    }
+    task.weather_updated_at = datetime.now()
+    task.treatment_note = "已去除部分病叶"
+    db_session.commit()
 
     preview = client.get(f"/api/history/tasks/{task.id}/report", headers=headers)
     assert preview.status_code == 200
-    assert preview.json()["task"]["id"] == task.id
-    assert preview.json()["severity_assessments"][0]["risk_level"] == "moderate"
+    preview_data = preview.json()
+    assert preview_data["task"]["id"] == task.id
+    assert preview_data["severity_assessments"][0]["risk_level"] == "moderate"
+    assert preview_data["inspection_images"][0]["annotated_image_url"] == "http://minio/result-a.jpg"
+    assert preview_data["question_answers"][0]["label"] == "目前出现症状的叶片大约占整株多少？"
+    assert preview_data["weather_metrics"]["avg_humidity"] == 88.0
+    assert "番茄晚疫病" in preview_data["integrated_conclusion"]
+    assert "天气环境风险为 high" in preview_data["integrated_conclusion"]
+    assert "控制棚内湿度" in preview_data["action_items"]
+    assert preview_data["data_sources"]["weather_source"] == "Open-Meteo"
+    assert "复查日期：" in preview_data["follow_up_template"]
 
     download = client.get(
         f"/api/history/tasks/{task.id}/report/download?format=html",
@@ -569,21 +598,77 @@ def test_report_preview_and_html_download(client, db_session):
     assert "text/html" in download.headers["content-type"]
     assert "attachment" in download.headers["content-disposition"]
     assert "农作物病害检测报告" in download.text
+    assert "综合结论" in download.text
+    assert "检测图片" in download.text
+    assert "问卷答案" in download.text
+    assert "未来 3 天平均湿度" in download.text
+    assert "数据来源说明" in download.text
+    assert "复查记录" in download.text
 
 
-def test_report_download_defaults_to_pdf(client, db_session):
-    """不传 format 时默认导出 PDF；未安装 reportlab 时返回可操作的 503。"""
+def test_report_download_defaults_to_pdf(client, db_session, tmp_path):
+    """不传 format 时默认导出 PDF，并可嵌入本地原图和标注图。"""
     user = _create_user(db_session, "history_pdf_report_user")
     task = _create_history_task(db_session, _get_user_id(user))
     headers = _get_headers(_get_user_id(user))
+    image_bytes = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+    )
+    source_image = tmp_path / "source.png"
+    annotated_image = tmp_path / "annotated.png"
+    source_image.write_bytes(image_bytes)
+    annotated_image.write_bytes(image_bytes)
+    for result in db_session.query(DetectionResult).filter(DetectionResult.task_id == task.id):
+        result.image_path = str(source_image)
+        result.annotated_image_url = str(annotated_image)
+    db_session.commit()
 
     response = client.get(f"/api/history/tasks/{task.id}/report/download", headers=headers)
 
     assert response.status_code in {200, 503}
     if response.status_code == 200:
         assert response.headers["content-type"] == "application/pdf"
+        assert response.content.startswith(b"%PDF")
     else:
         assert "reportlab" in response.text
+
+
+def test_video_report_samples_skip_unembeddable_frames(tmp_path):
+    """视频 PDF 只选择可嵌入的关键帧，避免显示不可嵌入占位。"""
+    from app.services.history_service import HistoryService
+
+    image_path = tmp_path / "frame.png"
+    image_path.write_bytes(
+        base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+        )
+    )
+
+    samples = HistoryService._select_report_image_samples(
+        {
+            "task": {"task_type": "video"},
+            "inspection_images": [
+                {
+                    "image_path": "frame_1.jpg",
+                    "annotated_image_url": str(image_path),
+                    "classes": ["马铃薯晚疫病"],
+                },
+                {
+                    "image_path": "frame_2.jpg",
+                    "annotated_image_url": None,
+                    "classes": ["马铃薯晚疫病"],
+                },
+                {
+                    "image_path": "frame_3.jpg",
+                    "annotated_image_url": "http://minio/missing.jpg",
+                    "classes": ["马铃薯晚疫病"],
+                },
+            ],
+        }
+    )
+
+    assert len(samples) == 1
+    assert samples[0]["annotated"] == str(image_path)
 
 
 # ============================================================
