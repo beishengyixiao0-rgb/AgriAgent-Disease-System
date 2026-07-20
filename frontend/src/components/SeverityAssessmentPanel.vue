@@ -1,5 +1,9 @@
 <template>
-  <section v-if="canAssess" class="severity-panel">
+  <section
+    v-if="canAssess"
+    class="severity-panel"
+    :class="assessment ? `severity-${assessment.risk_level}` : 'severity-unassessed'"
+  >
     <div class="severity-intro">
       <div>
         <span class="severity-kicker">{{ copy.kicker }}</span>
@@ -20,6 +24,7 @@
       <div class="assessment-meta">
         <span>{{ assessment.class_name_display || selectedClassLabel }}</span>
         <span>{{ copy.confidence }}：{{ confidenceLabel(assessment.assessment_confidence) }}</span>
+        <span>{{ assessmentSourceLabel }}</span>
       </div>
 
       <div v-if="assessment.reasons?.length" class="result-block">
@@ -166,22 +171,22 @@ const emit = defineEmits(['updated'])
 const COPY = {
   zh: {
     kicker: '现场风险评估', title: '需要进一步判断病害严重程度？', completedTitle: '严重程度评估已完成',
-    description: '回答几项现场问题，结合本次检测结果生成状态评估。', start: '让 AI 评估严重程度', reassess: '重新评估',
+    description: '回答几项现场问题，结合本次检测结果生成状态评估。', start: '开始严重程度评估', reassess: '重新评估',
     dialogTitle: '病害严重程度问卷', dialogLead: '补充现场情况', dialogDescription: 'YOLO 置信度不代表病害严重程度，评估需要结合真实受害范围与传播情况。',
     selectClass: '评估类别', loading: '正在加载问卷…', loadFailed: '问卷加载失败，请稍后重试。', required: '必答',
     notesPlaceholder: '例如：最近连续降雨，病斑在三天内明显增多……', cancel: '稍后填写', submit: '提交评估', submitting: '正在评估…',
-    requiredMessage: '请先完成所有必答问题', success: '严重程度评估已生成', confidence: '评估可信度', reasons: '判断依据', uncertainties: '仍需确认', actions: '建议措施',
+    requiredMessage: '请先完成所有必答问题', success: '严重程度评估已生成', confidence: '评估可信度', source: '评估方式', ruleBased: '规则评估', llmEnhanced: '大模型增强', reasons: '判断依据', uncertainties: '仍需确认', actions: '建议措施',
     minimumHint: (count) => `至少提供 ${count} 项明确信息，可获得更可靠的评估。`,
     risks: { low: '低风险', moderate: '中等风险', high: '高风险', critical: '严重风险', insufficient_information: '信息不足' },
     confidences: { low: '较低', medium: '中等', high: '较高' },
   },
   en: {
     kicker: 'Field risk assessment', title: 'Need a severity assessment?', completedTitle: 'Severity assessment complete',
-    description: 'Answer a few field questions to assess the current condition alongside the detection result.', start: 'Ask AI to assess severity', reassess: 'Reassess',
+    description: 'Answer a few field questions to assess the current condition alongside the detection result.', start: 'Start severity assessment', reassess: 'Reassess',
     dialogTitle: 'Disease severity questionnaire', dialogLead: 'Add field observations', dialogDescription: 'YOLO confidence is not disease severity. The assessment also needs the affected area and spread information.',
     selectClass: 'Class to assess', loading: 'Loading questionnaire…', loadFailed: 'Unable to load the questionnaire. Try again later.', required: 'Required',
     notesPlaceholder: 'For example: Continuous rain recently, with lesions increasing over three days…', cancel: 'Later', submit: 'Submit assessment', submitting: 'Assessing…',
-    requiredMessage: 'Complete all required questions first', success: 'Severity assessment generated', confidence: 'Assessment confidence', reasons: 'Assessment basis', uncertainties: 'Uncertainties', actions: 'Recommended actions',
+    requiredMessage: 'Complete all required questions first', success: 'Severity assessment generated', confidence: 'Assessment confidence', source: 'Assessment method', ruleBased: 'Rule-based', llmEnhanced: 'LLM enhanced', reasons: 'Assessment basis', uncertainties: 'Uncertainties', actions: 'Recommended actions',
     minimumHint: (count) => `Provide at least ${count} known answers for a more reliable assessment.`,
     risks: { low: 'Low risk', moderate: 'Moderate risk', high: 'High risk', critical: 'Critical risk', insufficient_information: 'Insufficient information' },
     confidences: { low: 'Low', medium: 'Medium', high: 'High' },
@@ -190,6 +195,12 @@ const COPY = {
 
 const localeStore = useLocaleStore()
 const copy = computed(() => COPY[localeStore.locale === 'en' ? 'en' : 'zh'])
+const assessmentSourceLabel = computed(() => {
+  const model = assessment.value?.llm_model
+  return model && model !== 'rule-based'
+    ? `${copy.value.source}：${copy.value.llmEnhanced} (${model})`
+    : `${copy.value.source}：${copy.value.ruleBased}`
+})
 const dialogVisible = ref(false)
 const questionsLoading = ref(false)
 const submitting = ref(false)
@@ -381,20 +392,29 @@ watch(
 
 <style scoped>
 .severity-panel {
+  --severity-color: #15803d;
+  --severity-border: #d8eadc;
   box-sizing: border-box;
   width: 100%;
   max-width: 680px;
   padding: 18px;
-  border: 1px solid #d8eadc;
+  border: 1px solid var(--severity-border);
   border-radius: 18px;
-  background: linear-gradient(145deg, #f7fcf8, #fff);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--severity-color) 7%, white), #fff 62%);
   box-shadow: 0 5px 18px rgba(22, 101, 52, .06);
+  transition: border-color .2s ease, background .2s ease;
 }
+.severity-low { --severity-color: #1b9a57; --severity-border: #cbe9d5; }
+.severity-moderate { --severity-color: #d79a22; --severity-border: #f0deb8; }
+.severity-high { --severity-color: #e46d25; --severity-border: #f1ceb6; }
+.severity-critical { --severity-color: #dc3f3f; --severity-border: #efc6c6; }
+.severity-insufficient_information,
+.severity-unassessed { --severity-color: #7c8780; --severity-border: #dde3df; }
 .severity-intro { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 .severity-intro > div { min-width: 0; }
-.severity-kicker { display: block; margin-bottom: 5px; color: #15803d; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-.severity-intro strong { color: #1f2937; font-size: 15px; }
-.severity-intro p { margin: 6px 0 0; color: #69766d; font-size: 13px; line-height: 1.6; }
+.severity-kicker { display: block; margin-bottom: 5px; color: var(--severity-color); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.severity-intro strong { color: #1f2937; font-size: 16px; }
+.severity-intro p { margin: 6px 0 0; color: #69766d; font-size: 14px; line-height: 1.6; }
 .risk-badge { flex-shrink: 0; padding: 6px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; }
 .risk-low { background: #eaf8ed; color: #15803d; }
 .risk-moderate { background: #fff7dd; color: #a16207; }
@@ -402,14 +422,14 @@ watch(
 .risk-critical { background: #fef0f0; color: #c81e1e; }
 .risk-insufficient_information { background: #f1f3f2; color: #66706a; }
 .assessment-result { margin-top: 14px; padding: 14px; border: 1px solid #e0ebe3; border-radius: 13px; background: #fff; }
-.assessment-meta { display: flex; flex-wrap: wrap; gap: 7px 14px; margin-bottom: 11px; color: #657168; font-size: 12px; }
+.assessment-meta { display: flex; flex-wrap: wrap; gap: 7px 14px; margin-bottom: 11px; color: #657168; font-size: 13px; }
 .result-block + .result-block { margin-top: 11px; }
-.result-block strong { color: #334139; font-size: 12px; }
-.result-block ul, .result-block ol { margin: 6px 0 0; padding-left: 20px; color: #536158; font-size: 12px; line-height: 1.65; }
+.result-block strong { color: #334139; font-size: 13px; }
+.result-block ul, .result-block ol { margin: 6px 0 0; padding-left: 20px; color: #536158; font-size: 13px; line-height: 1.65; }
 .uncertainty-block { color: #9a6700; }
 .action-block { padding-top: 10px; border-top: 1px solid #edf1ee; }
-.assessment-button { display: flex; width: 100%; align-items: center; justify-content: space-between; margin-top: 14px; padding: 11px 14px; border: 0; border-radius: 11px; background: #15803d; color: #fff; cursor: pointer; font-weight: 750; }
-.assessment-button:hover { background: #166534; }
+.assessment-button { display: flex; width: 100%; align-items: center; justify-content: space-between; margin-top: 14px; padding: 11px 14px; border: 0; border-radius: 11px; background: var(--severity-color); color: #fff; cursor: pointer; font-weight: 750; }
+.assessment-button:hover { filter: brightness(.9); }
 .dialog-content { max-height: 62vh; overflow-y: auto; padding-right: 5px; }
 .questionnaire-lead { display: flex; gap: 11px; margin-bottom: 18px; padding: 14px; border-radius: 13px; background: #eef9f1; }
 .questionnaire-icon { display: grid; width: 32px; height: 32px; flex-shrink: 0; place-items: center; border-radius: 10px; background: #15803d; color: #fff; }

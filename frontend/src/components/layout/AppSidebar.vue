@@ -21,7 +21,6 @@
 import {
   ChatDotRound,
   Clock,
-  Cpu,
   DataAnalysis,
   House
 } from '@element-plus/icons-vue'
@@ -40,13 +39,12 @@ const activeMenu = computed(() => {
 })
 
 /** 侧边栏菜单配置 */
-const menuItems = [
+const menuItems = computed(() => [
   { path: '/', titleKey: 'nav.home', icon: House },
   { path: '/ai-chat', titleKey: 'nav.chat', icon: ChatDotRound },
   { path: '/data-analysis', titleKey: 'nav.dashboard', icon: DataAnalysis },
   { path: '/history', titleKey: 'nav.history', icon: Clock },
-  { path: '/training', titleKey: 'nav.training', icon: Cpu },
-]
+])
 </script>
 
 <style lang="scss" scoped>

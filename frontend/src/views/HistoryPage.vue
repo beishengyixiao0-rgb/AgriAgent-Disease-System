@@ -26,7 +26,7 @@
         <div class="filter-primary-row">
           <div class="search-box">
             <el-icon><Search /></el-icon>
-            <input v-model.trim="filters.keyword" :placeholder="copy.searchPlaceholder" />
+            <input v-model.trim="filters.keyword" :placeholder="copy.plantSearchPlaceholder" />
             <button v-if="filters.keyword" type="button" :aria-label="copy.clear" @click="filters.keyword = ''">
               <el-icon><Close /></el-icon>
             </button>
@@ -44,14 +44,6 @@
         </div>
 
         <div v-if="showFilters" class="filter-panel">
-          <label>
-            <span>{{ copy.taskType }}</span>
-            <el-select v-model="filters.taskType" clearable :placeholder="copy.allTypes">
-              <el-option :label="copy.single" value="single" />
-              <el-option :label="copy.batch" value="batch" />
-              <el-option :label="copy.video" value="video" />
-            </el-select>
-          </label>
           <label>
             <span>{{ copy.status }}</span>
             <el-select v-model="filters.status" clearable :placeholder="copy.allStatuses">
@@ -95,9 +87,16 @@
             </el-select>
           </label>
           <label>
-            <span>{{ copy.scene }}</span>
-            <el-select v-model="filters.sceneId" clearable :placeholder="copy.allScenes">
-              <el-option v-for="scene in scenes" :key="scene.id" :label="scene.display_name || scene.name" :value="scene.id" />
+            <span>{{ copy.plantName }}</span>
+            <el-select
+              v-model="filters.plantName"
+              clearable
+              filterable
+              allow-create
+              default-first-option
+              :placeholder="copy.plantPlaceholder"
+            >
+              <el-option v-for="item in plantOptions" :key="item.value" :label="item.label" :value="item.value" />
             </el-select>
           </label>
           <label class="date-field">
@@ -132,6 +131,7 @@
         @open="openDetail"
         @ask-ai="askAi"
         @delete="confirmDelete"
+        @download="downloadReport"
         @update-treatment="updateTreatmentStatus"
         @clear="clearFilters"
       />
@@ -155,6 +155,7 @@
       :locale="localeStore.locale"
       @close="closeDetail"
       @delete="confirmDelete"
+      @download="downloadReport"
       @ask-ai="askAi"
       @update-treatment="updateTreatmentStatus"
       @assessment-updated="handleAssessmentUpdated"
@@ -180,7 +181,7 @@ import { useRouter } from 'vue-router'
 
 import {
   deleteHistoryTaskApi,
-  getHistoryScenesApi,
+  downloadHistoryReportApi,
   getHistorySummaryApi,
   getHistoryTaskDetailApi,
   getHistoryTasksApi,
@@ -203,14 +204,14 @@ const detailLoading = ref(false)
 const detailVisible = ref(false)
 const showFilters = ref(false)
 const tasks = ref([])
-const scenes = ref([])
 const selectedDetail = ref(null)
+const downloadingTaskId = ref(null)
 const summary = ref({ total_tasks: 0, today_tasks: 0, status_counts: {} })
 
 const pagination = reactive({ page: 1, pageSize: 10, total: 0, totalPages: 0 })
 const filters = reactive({
-  keyword: '', taskType: '', status: '', riskLevel: '', treatmentStatus: '',
-  className: '', sceneId: null, dateRange: [],
+  keyword: '', status: '', riskLevel: '', treatmentStatus: '',
+  className: '', plantName: '', dateRange: [],
 })
 
 const copy = computed(() => {
@@ -218,19 +219,21 @@ const copy = computed(() => {
   return en ? {
     back: 'Back to home', title: 'Detection History', subtitle: 'Review your saved YOLO detection tasks', aiAgent: 'AI Agent', analytics: 'Analytics',
     searchPlaceholder: 'Search task, disease class or scene…', clear: 'Clear search', filters: 'Filters', refresh: 'Refresh', taskType: 'Detection type', allTypes: 'All types', single: 'Single image', batch: 'Batch images', video: 'Video', status: 'Detection status', allStatuses: 'All statuses', completed: 'Completed', processing: 'Processing', pending: 'Pending', failed: 'Failed', scene: 'Scene', allScenes: 'All scenes', dateRange: 'Date range', to: 'to', startDate: 'Start date', endDate: 'End date', clearFilters: 'Clear all filters', showing: 'Showing', of: 'of', records: 'records', synced: 'Synced with history API', deleteTitle: 'Delete detection record?', deleteMessage: 'This removes the task and its stored detection results. This action cannot be undone.', deleteDone: 'Detection record deleted', deleteFailed: 'Unable to delete detection record', detailFailed: 'Unable to load detection details', loadFailed: 'Unable to load history', askPrompt: 'Analyze detection task #{id}. It is a {type} task with {objects} detected objects. Please explain possible risks and recommended next steps based on my history.',
+    plantSearchPlaceholder: 'Search task, disease class or plant…',
     riskLevel: 'Severity', allRiskLevels: 'All severity levels', unassessed: 'Not assessed', lowRisk: 'Low', moderateRisk: 'Moderate', highRisk: 'High', criticalRisk: 'Critical', insufficient: 'Insufficient information',
-    treatmentStatus: 'Treatment status', allTreatmentStatuses: 'All treatment statuses', treatmentPending: 'Pending treatment', treatmentInProgress: 'In progress', monitoring: 'Monitoring', treated: 'Treated', resolved: 'Resolved', diseaseClass: 'Disease class', classPlaceholder: 'Select or enter a class', treatmentUpdated: 'Treatment status updated', treatmentFailed: 'Unable to update treatment status',
+    treatmentStatus: 'Treatment status', allTreatmentStatuses: 'All treatment statuses', treatmentPending: 'Pending treatment', treatmentInProgress: 'In progress', monitoring: 'Monitoring', treated: 'Treated', resolved: 'Resolved', diseaseClass: 'Disease class', classPlaceholder: 'Select or enter a class', plantName: 'Plant', plantPlaceholder: 'Select or enter a plant', treatmentUpdated: 'Treatment status updated', treatmentFailed: 'Unable to update treatment status', treatmentNoteTitle: 'Treatment note', treatmentNotePrompt: 'Optional: record what was done or the next follow-up plan', downloadDone: 'Report downloaded', downloadFailed: 'Unable to download report',
   } : {
     back: '返回首页', title: '检测历史', subtitle: '查看当前账号保存的 YOLO 检测任务', aiAgent: 'AI 智能体', analytics: '数据分析',
     searchPlaceholder: '搜索任务编号、病害类别或场景…', clear: '清除搜索', filters: '筛选', refresh: '刷新', taskType: '检测类型', allTypes: '全部类型', single: '单图检测', batch: '批量检测', video: '视频检测', status: '检测状态', allStatuses: '全部状态', completed: '已完成', processing: '处理中', pending: '待处理', failed: '失败', scene: '检测场景', allScenes: '全部场景', dateRange: '日期范围', to: '至', startDate: '开始日期', endDate: '结束日期', clearFilters: '清除全部筛选', showing: '当前显示', of: '/', records: '条检测记录', synced: '已连接历史记录接口', deleteTitle: '确认删除检测记录？', deleteMessage: '该操作会同时删除任务及其保存的检测结果，且无法恢复。', deleteDone: '检测记录已删除', deleteFailed: '删除检测记录失败', detailFailed: '检测详情加载失败', loadFailed: '历史记录加载失败', askPrompt: '请分析检测任务 #{id}。这是一次{type}任务，共检测到 {objects} 个目标。请结合我的历史记录说明可能风险和后续建议。',
+    plantSearchPlaceholder: '搜索任务编号、病害类别或植物…',
     riskLevel: '严重程度', allRiskLevels: '全部严重程度', unassessed: '未评估', lowRisk: '低风险', moderateRisk: '中等风险', highRisk: '高风险', criticalRisk: '严重风险', insufficient: '信息不足',
-    treatmentStatus: '处理状态', allTreatmentStatuses: '全部处理状态', treatmentPending: '待处理', treatmentInProgress: '处理中', monitoring: '观察中', treated: '已处理', resolved: '已解决', diseaseClass: '病害类别', classPlaceholder: '选择或输入类别', treatmentUpdated: '处理状态已更新', treatmentFailed: '处理状态更新失败',
+    treatmentStatus: '处理状态', allTreatmentStatuses: '全部处理状态', treatmentPending: '待处理', treatmentInProgress: '处理中', monitoring: '观察中', treated: '已处理', resolved: '已解决', diseaseClass: '病害类别', classPlaceholder: '选择或输入类别', plantName: '植物', plantPlaceholder: '选择或输入植物名称', treatmentUpdated: '处理状态已更新', treatmentFailed: '处理状态更新失败', treatmentNoteTitle: '处理备注', treatmentNotePrompt: '可选：记录已采取的措施或下一步复查计划', downloadDone: '报告已下载', downloadFailed: '报告下载失败',
   }
 })
 
 const activeFilterCount = computed(() => [
-  filters.taskType, filters.status, filters.riskLevel, filters.treatmentStatus,
-  filters.className, filters.sceneId, filters.dateRange?.length,
+  filters.status, filters.riskLevel, filters.treatmentStatus,
+  filters.className, filters.plantName, filters.dateRange?.length,
 ].filter(Boolean).length)
 const visibleTasks = computed(() => tasks.value)
 const classOptions = computed(() => {
@@ -240,6 +243,13 @@ const classOptions = computed(() => {
     const displayNames = Object.keys(task.class_counts_display || {})
     rawNames.forEach((value, index) => options.set(value, displayNames[index] || value))
     if (task.primary_class_name) options.set(task.primary_class_name, task.primary_class_name_display || task.primary_class_name)
+  })
+  return Array.from(options, ([value, label]) => ({ value, label }))
+})
+const plantOptions = computed(() => {
+  const options = new Map()
+  tasks.value.forEach((task) => {
+    if (task.plant_name) options.set(task.plant_name, task.plant_name_display || task.plant_name)
   })
   return Array.from(options, ([value, label]) => ({ value, label }))
 })
@@ -258,13 +268,12 @@ async function fetchTasks() {
     const response = await getHistoryTasksApi({
       page: pagination.page,
       page_size: pagination.pageSize,
-      task_type: filters.taskType || undefined,
       status: filters.status || undefined,
       keyword: filters.keyword || undefined,
       risk_level: filters.riskLevel || undefined,
       treatment_status: filters.treatmentStatus || undefined,
       class_name: filters.className || undefined,
-      scene_id: filters.sceneId || undefined,
+      plant_name: filters.plantName || undefined,
       start_date: formatDateParam(filters.dateRange?.[0]),
       end_date: formatDateParam(filters.dateRange?.[1]),
     })
@@ -291,17 +300,8 @@ async function fetchSummary() {
   }
 }
 
-async function fetchScenes() {
-  try {
-    const response = await getHistoryScenesApi()
-    scenes.value = Array.isArray(response?.scenes) ? response.scenes : []
-  } catch (error) {
-    console.error('[History] 加载场景失败', error)
-  }
-}
-
 async function refreshAll() {
-  await Promise.all([fetchTasks(), fetchSummary(), fetchScenes()])
+  await Promise.all([fetchTasks(), fetchSummary()])
 }
 
 async function openDetail(task) {
@@ -318,10 +318,27 @@ async function openDetail(task) {
   }
 }
 
-async function updateTreatmentStatus({ task, status, note = null }) {
-  if (!task?.id || !status || task.treatment_status === status) return
+async function updateTreatmentStatus({ task, status, note, editNote = false }) {
+  if (!task?.id || !status) return
+  let nextNote = note
+  if (editNote || nextNote === undefined) {
+    try {
+      const answer = await ElMessageBox.prompt(copy.value.treatmentNotePrompt, copy.value.treatmentNoteTitle, {
+        inputValue: task.treatment_note || '',
+        inputType: 'textarea',
+        inputValidator: (value) => String(value || '').length <= 1000 || (localeStore.locale === 'en' ? 'Maximum 1000 characters' : '最多输入 1000 个字符'),
+        confirmButtonText: localeStore.locale === 'en' ? 'Save' : '保存',
+        cancelButtonText: localeStore.locale === 'en' ? 'Cancel' : '取消',
+      })
+      nextNote = answer.value?.trim() || null
+    } catch (error) {
+      if (error === 'cancel' || error === 'close') return
+      throw error
+    }
+  }
+  if (task.treatment_status === status && (task.treatment_note || null) === (nextNote || null)) return
   try {
-    const result = await updateTreatmentStatusApi(task.id, { status, note })
+    const result = await updateTreatmentStatusApi(task.id, { status, note: nextNote || null })
     Object.assign(task, result)
     const listTask = tasks.value.find((item) => item.id === task.id)
     if (listTask && listTask !== task) Object.assign(listTask, result)
@@ -331,6 +348,28 @@ async function updateTreatmentStatus({ task, status, note = null }) {
   } catch (error) {
     console.error('[History] 更新处理状态失败', error)
     ElMessage.error(copy.value.treatmentFailed)
+  }
+}
+
+async function downloadReport({ task, format = 'pdf' }) {
+  if (!task?.id || downloadingTaskId.value) return
+  downloadingTaskId.value = task.id
+  try {
+    const blob = await downloadHistoryReportApi(task.id, format)
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `detection_report_${task.id}.${format}`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    ElMessage.success(copy.value.downloadDone)
+  } catch (error) {
+    console.error('[History] 下载报告失败', error)
+    ElMessage.error(copy.value.downloadFailed)
+  } finally {
+    downloadingTaskId.value = null
   }
 }
 
@@ -384,17 +423,16 @@ function askAi(task) {
 
 function clearFilters() {
   filters.keyword = ''
-  filters.taskType = ''
   filters.status = ''
   filters.riskLevel = ''
   filters.treatmentStatus = ''
   filters.className = ''
-  filters.sceneId = null
+  filters.plantName = ''
   filters.dateRange = []
 }
 
 watch(
-  () => [filters.taskType, filters.status, filters.riskLevel, filters.treatmentStatus, filters.sceneId, filters.dateRange?.[0]?.getTime?.(), filters.dateRange?.[1]?.getTime?.()],
+  () => [filters.status, filters.riskLevel, filters.treatmentStatus, filters.dateRange?.[0]?.getTime?.(), filters.dateRange?.[1]?.getTime?.()],
   () => {
     pagination.page = 1
     fetchTasks()
@@ -403,7 +441,7 @@ watch(
 
 let searchTimer
 watch(
-  () => [filters.keyword, filters.className],
+  () => [filters.keyword, filters.className, filters.plantName],
   () => {
     window.clearTimeout(searchTimer)
     searchTimer = window.setTimeout(() => {
@@ -425,21 +463,21 @@ onBeforeUnmount(() => window.clearTimeout(searchTimer))
 .icon-button { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; color: #68766d; text-decoration: none; }
 .icon-button:hover { background: #edf2ee; color: #25372c; }
 .brand-mark { width: 34px; height: 34px; margin-left: 2px; display: grid; place-items: center; border-radius: 10px; background: #1c8b51; color: #fff; font-size: 18px; }
-.header-left h1 { margin: 0; color: #17251c; font-size: 16px; font-weight: 800; }
-.header-left p { margin: 2px 0 0; color: #879189; font-size: 10px; }
+.header-left h1 { margin: 0; color: #17251c; font-size: 18px; font-weight: 800; }
+.header-left p { margin: 2px 0 0; color: #879189; font-size: 12px; }
 .header-nav { gap: 7px; }
-.header-nav > a { display: inline-flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 9px; color: #637068; text-decoration: none; font-size: 12px; }
+.header-nav > a { display: inline-flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 9px; color: #637068; text-decoration: none; font-size: 13px; }
 .header-nav > a:hover { background: #edf3ef; color: #18834a; }
 .history-container { width: min(1040px, calc(100% - 36px)); margin: 0 auto; padding: 28px 0 46px; }
 .filter-section { margin-top: 22px; }
 .filter-primary-row { display: flex; gap: 9px; }
 .search-box { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; }
 .search-box > .el-icon { position: absolute; left: 13px; z-index: 1; color: #8d9790; }
-.search-box input { width: 100%; height: 42px; box-sizing: border-box; padding: 0 38px; border: 1px solid #dfe5e1; border-radius: 12px; outline: none; background: #fff; color: #28382e; font-size: 12px; transition: .2s; }
+.search-box input { width: 100%; height: 42px; box-sizing: border-box; padding: 0 38px; border: 1px solid #dfe5e1; border-radius: 12px; outline: none; background: #fff; color: #28382e; font-size: 14px; transition: .2s; }
 .search-box input:focus { border-color: #87c39c; box-shadow: 0 0 0 3px rgba(28, 139, 81, .08); }
 .search-box button { position: absolute; right: 10px; border: 0; background: transparent; color: #8b958e; cursor: pointer; }
 .filter-toggle, .refresh-button { height: 42px; border: 1px solid #dfe5e1; border-radius: 12px; background: #fff; color: #647168; display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; }
-.filter-toggle { padding: 0 14px; font-size: 12px; font-weight: 700; }
+.filter-toggle { padding: 0 14px; font-size: 13px; font-weight: 700; }
 .filter-toggle.active { border-color: #a6d3b5; background: #eaf7ee; color: #18834a; }
 .filter-toggle span { min-width: 17px; height: 17px; display: grid; place-items: center; border-radius: 50%; background: #1b8a50; color: #fff; font-size: 9px; }
 .refresh-button { width: 42px; }
@@ -447,12 +485,12 @@ onBeforeUnmount(() => window.clearTimeout(searchTimer))
 @keyframes spin { to { transform: rotate(360deg); } }
 .filter-panel { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 13px; margin-top: 10px; padding: 16px; border: 1px solid #e1e7e3; border-radius: 15px; background: #fff; box-shadow: 0 10px 28px rgba(44, 80, 56, .05); }
 .filter-panel label { min-width: 0; }
-.filter-panel label > span { display: block; margin-bottom: 6px; color: #7a867e; font-size: 10px; font-weight: 700; }
+.filter-panel label > span { display: block; margin-bottom: 6px; color: #7a867e; font-size: 12px; font-weight: 700; }
 .filter-panel :deep(.el-select), .filter-panel :deep(.el-date-editor) { width: 100%; }
 .date-field { grid-column: span 2; }
-.clear-filters { align-self: end; justify-self: start; height: 32px; border: 0; background: transparent; color: #718078; display: inline-flex; align-items: center; gap: 4px; font-size: 10px; cursor: pointer; }
+.clear-filters { align-self: end; justify-self: start; height: 32px; border: 0; background: transparent; color: #718078; display: inline-flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer; }
 .clear-filters:hover { color: #18834a; }
-.result-meta { min-height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #818c85; font-size: 10px; }
+.result-meta { min-height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #818c85; font-size: 12px; }
 .result-meta p { margin: 0; }
 .result-meta b { color: #33453a; }
 .api-note { display: inline-flex; align-items: center; gap: 5px; }

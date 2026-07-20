@@ -50,3 +50,12 @@ export function updateTaskLocationApi(taskId, data, refreshWeather = true) {
 export function refreshTaskWeatherRiskApi(taskId) {
   return request.get(`/history/tasks/${taskId}/weather-risk`)
 }
+
+/** 下载单条检测历史报告；响应是 Blob，不经过 JSON 解析。 */
+export function downloadHistoryReportApi(taskId, format = 'pdf') {
+  return request.get(`/history/tasks/${taskId}/report/download`, {
+    params: { format },
+    responseType: 'blob',
+    timeout: 60000,
+  })
+}

@@ -34,7 +34,6 @@
           <div class="section-heading">
             <div>
               <h4>{{ locale === 'en' ? 'Detected classes' : '检测类别统计' }}</h4>
-              <p>{{ locale === 'en' ? 'Class totals returned by the history detail API.' : '根据历史详情接口返回的目标类别汇总。' }}</p>
             </div>
           </div>
           <div v-if="classEntries.length" class="class-list">
@@ -53,14 +52,20 @@
             <small v-if="detail.task.treatment_updated_at">
               {{ locale === 'en' ? 'Updated' : '更新于' }} {{ formatDateTime(detail.task.treatment_updated_at) }}
             </small>
+            <p v-if="detail.task.treatment_note">{{ detail.task.treatment_note }}</p>
           </div>
-          <el-select
-            :model-value="detail.task.treatment_status || 'pending'"
-            class="treatment-select"
-            @change="updateTreatment"
-          >
-            <el-option v-for="option in treatmentOptions" :key="option.value" :label="option.label" :value="option.value" />
-          </el-select>
+          <div class="treatment-controls">
+            <el-select
+              :model-value="detail.task.treatment_status || 'pending'"
+              class="treatment-select"
+              @change="updateTreatment"
+            >
+              <el-option v-for="option in treatmentOptions" :key="option.value" :label="option.label" :value="option.value" />
+            </el-select>
+            <button type="button" @click="editTreatmentNote">
+              {{ locale === 'en' ? 'Edit note' : '编辑备注' }}
+            </button>
+          </div>
         </section>
 
         <TaskWeatherPanel
@@ -73,11 +78,7 @@
           <div class="section-heading">
             <div>
               <h4>{{ locale === 'en' ? 'Severity assessment' : '严重程度评估' }}</h4>
-              <p>{{ locale === 'en' ? 'Assessment is saved with this detection record.' : '问卷评估结果会保存到本条检测记录。' }}</p>
             </div>
-            <span v-if="detail.task.risk_level" class="risk-badge" :class="`risk-${detail.task.risk_level}`">
-              {{ riskLabel(detail.task.risk_level) }}
-            </span>
           </div>
           <SeverityAssessmentPanel
             v-if="assessmentSource"
@@ -137,6 +138,15 @@
         </el-button>
         <div>
           <el-button @click="$emit('close')">{{ locale === 'en' ? 'Close' : '关闭' }}</el-button>
+          <el-dropdown split-button :disabled="!detail?.task" @click="$emit('download', { task: detail?.task, format: 'pdf' })" @command="$emit('download', { task: detail?.task, format: $event })">
+            <el-icon><Download /></el-icon>{{ locale === 'en' ? 'Download PDF' : '下载 PDF' }}
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="pdf">PDF</el-dropdown-item>
+                <el-dropdown-item command="html">HTML</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
           <el-button type="primary" @click="$emit('ask-ai', detail?.task)">
             <el-icon><ChatDotRound /></el-icon>{{ locale === 'en' ? 'Ask AI' : '询问 AI' }}
           </el-button>
@@ -151,7 +161,7 @@
 </template>
 
 <script setup>
-import { ChatDotRound, DataAnalysis, Delete } from '@element-plus/icons-vue'
+import { ChatDotRound, DataAnalysis, Delete, Download } from '@element-plus/icons-vue'
 import { computed, ref, watch } from 'vue'
 import SeverityAssessmentPanel from '@/components/SeverityAssessmentPanel.vue'
 import TaskWeatherPanel from '@/components/history/TaskWeatherPanel.vue'
@@ -163,7 +173,7 @@ const props = defineProps({
   locale: { type: String, default: 'zh' },
 })
 
-const emit = defineEmits(['close', 'delete', 'ask-ai', 'update-treatment', 'assessment-updated', 'weather-updated'])
+const emit = defineEmits(['close', 'delete', 'download', 'ask-ai', 'update-treatment', 'assessment-updated', 'weather-updated'])
 
 const previewUrl = ref('')
 const previewVisible = computed({
@@ -229,19 +239,20 @@ function resultClassName(row) {
   return row.class_name_display || (props.locale === 'en' ? (row.class_name || '-') : (row.class_name_cn || row.class_name || '-'))
 }
 
-function riskLabel(risk) {
-  const labels = props.locale === 'en'
-    ? { low: 'Low risk', moderate: 'Moderate', high: 'High risk', critical: 'Critical', insufficient_information: 'More info needed' }
-    : { low: '低风险', moderate: '中等风险', high: '高风险', critical: '严重风险', insufficient_information: '信息不足' }
-  return labels[risk] || (props.locale === 'en' ? 'Not assessed' : '未评估')
-}
-
 function treatmentLabel(status) {
   return treatmentOptions.value.find((item) => item.value === (status || 'pending'))?.label || status || '-'
 }
 
 function updateTreatment(status) {
   emit('update-treatment', { task: props.detail?.task, status })
+}
+
+function editTreatmentNote() {
+  emit('update-treatment', {
+    task: props.detail?.task,
+    status: props.detail?.task?.treatment_status || 'pending',
+    editNote: true,
+  })
 }
 
 function taskTypeLabel(type) {
@@ -288,41 +299,38 @@ function formatDateTime(value) {
 .detail-overview { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 18px; border-radius: 18px; background: linear-gradient(135deg, #f2faf5, #fbfdfb); border: 1px solid #dceae1; }
 .overview-main { display: flex; align-items: center; gap: 13px; min-width: 0; }
 .overview-icon { width: 46px; height: 46px; flex: 0 0 46px; display: grid; place-items: center; border-radius: 14px; background: #dff4e6; color: #19834a; font-size: 21px; }
-.overview-main span { color: #18834a; font-size: 11px; font-weight: 700; }
-.overview-main h3 { margin: 3px 0; color: #19281f; font-size: 16px; }
-.overview-main p { margin: 0; color: #7a867e; font-size: 12px; }
-.detail-status { padding: 5px 10px; border-radius: 999px; background: #f2f4f3; color: #667269; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.overview-main span { color: #18834a; font-size: 12px; font-weight: 700; }
+.overview-main h3 { margin: 3px 0; color: #19281f; font-size: 18px; }
+.overview-main p { margin: 0; color: #7a867e; font-size: 13px; }
+.detail-status { padding: 5px 10px; border-radius: 999px; background: #f2f4f3; color: #667269; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .detail-status.completed { background: #e7f7ed; color: #18854b; }
 .detail-status.processing { background: #eaf4ff; color: #337ecc; }
 .detail-status.pending { background: #fff4de; color: #b8790b; }
 .detail-status.failed { background: #fff0f0; color: #c94444; }
 .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
 .metric-grid div { padding: 13px; border: 1px solid #e6ebe8; border-radius: 13px; background: #fff; }
-.metric-grid span { display: block; color: #859088; font-size: 10px; }
-.metric-grid strong { display: block; margin-top: 5px; color: #26372d; font-size: 15px; }
+.metric-grid span { display: block; color: #859088; font-size: 12px; }
+.metric-grid strong { display: block; margin-top: 5px; color: #26372d; font-size: 17px; }
 .detail-section { margin-top: 18px; }
 .section-heading { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 10px; }
-.section-heading h4 { margin: 0; color: #26372d; font-size: 13px; }
-.section-heading p { margin: 3px 0 0; color: #879189; font-size: 11px; line-height: 1.5; }
+.section-heading h4 { margin: 0; color: #26372d; font-size: 15px; }
+.section-heading p { margin: 3px 0 0; color: #879189; font-size: 12px; line-height: 1.5; }
 .class-list { display: flex; flex-wrap: wrap; gap: 8px; }
-.class-pill { min-width: 120px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; border-radius: 10px; background: #f3f7f4; color: #46564c; font-size: 11px; }
+.class-pill { min-width: 120px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; border-radius: 10px; background: #f3f7f4; color: #46564c; font-size: 13px; }
 .class-pill b { min-width: 22px; height: 22px; display: grid; place-items: center; border-radius: 999px; background: #dff3e6; color: #18854b; }
 .status-management { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 16px; padding: 13px 15px; border: 1px solid #e2e9e4; border-radius: 13px; background: #f8faf8; }
-.status-copy span, .status-copy small { display: block; color: #839087; font-size: 10px; }
-.status-copy strong { display: block; margin: 3px 0; color: #26372d; font-size: 14px; }
+.status-copy span, .status-copy small { display: block; color: #839087; font-size: 12px; }
+.status-copy strong { display: block; margin: 3px 0; color: #26372d; font-size: 16px; }
+.status-copy p { max-width: 470px; margin: 6px 0 0; color: #68756d; font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
+.treatment-controls { display: flex; align-items: center; gap: 7px; }
 .treatment-select { width: 170px; }
+.treatment-controls button { border: 1px solid #dce5df; border-radius: 8px; padding: 7px 9px; background: #fff; color: #58675e; font-size: 12px; cursor: pointer; white-space: nowrap; }
 .severity-section :deep(.severity-panel) { max-width: none; box-shadow: none; }
-.risk-badge { flex-shrink: 0; padding: 5px 9px; border-radius: 999px; font-size: 10px; font-weight: 800; }
-.risk-low { background: #e9f8ef; color: #18854b; }
-.risk-moderate { background: #fff6e3; color: #ad730d; }
-.risk-high { background: #fff0e7; color: #c45118; }
-.risk-critical { background: #fff0f0; color: #c93636; }
-.risk-insufficient_information { background: #f1f3f2; color: #737d77; }
 .preview-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .preview-grid button { padding: 0; overflow: hidden; text-align: left; border: 1px solid #e4e9e6; border-radius: 12px; background: #fff; cursor: pointer; }
 .preview-grid img { width: 100%; height: 130px; display: block; object-fit: cover; background: #f3f5f4; }
-.preview-grid span { display: block; padding: 7px 9px; color: #68756d; font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.task-meta { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 16px; padding-top: 13px; border-top: 1px solid #edf0ee; color: #89938c; font-size: 10px; }
+.preview-grid span { display: block; padding: 7px 9px; color: #68756d; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-meta { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 16px; padding-top: 13px; border-top: 1px solid #edf0ee; color: #89938c; font-size: 12px; }
 .dialog-actions { display: flex; justify-content: space-between; align-items: center; }
 .full-preview { display: block; width: 100%; max-height: 78vh; object-fit: contain; }
 
@@ -330,6 +338,6 @@ function formatDateTime(value) {
   .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .preview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .status-management { align-items: flex-start; flex-direction: column; }
-  .treatment-select { width: 100%; }
+  .treatment-controls, .treatment-select { width: 100%; }
 }
 </style>

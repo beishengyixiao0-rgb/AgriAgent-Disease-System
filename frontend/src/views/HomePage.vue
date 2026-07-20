@@ -11,7 +11,6 @@
           <button @click="go('/data-analysis')">{{ tr('nav.dashboard') }}</button>
           <button @click="go('/history')">{{ tr('nav.history') }}</button>
           <button @click="go('/knowledge')">{{ tr('nav.knowledge') }}</button>
-          <button @click="go('/training')">{{ tr('nav.training') }}</button>
         </div>
 
         <LanguageSwitcher />
@@ -74,7 +73,7 @@
             class="prompt-add"
             :class="{ active: showAttachmentMenu }"
             :aria-expanded="showAttachmentMenu"
-            aria-label="添加附件或选择检测方式"
+            :aria-label="tr('home.addAttachmentAria')"
             @click="showAttachmentMenu = !showAttachmentMenu"
           >
             <Plus />
@@ -82,11 +81,11 @@
           <textarea
             v-model="prompt"
             rows="1"
-            aria-label="Ask AgriAgent"
+            :aria-label="tr('home.promptAria')"
             :placeholder="tr('home.placeholder')"
             @keydown.enter.exact.prevent="startConversation"
           />
-          <button class="prompt-submit" type="submit" :disabled="!prompt.trim()" aria-label="Send to AgriAgent">
+          <button class="prompt-submit" type="submit" :disabled="!prompt.trim()" :aria-label="tr('home.sendAria')">
             ➤
           </button>
         </form>
@@ -95,7 +94,7 @@
 
         <p class="prompt-hint">{{ tr('home.hint') }}</p>
 
-        <div class="suggestion-list" aria-label="Suggested questions">
+        <div class="suggestion-list" :aria-label="tr('home.suggestionsAria')">
           <button
             v-for="suggestion in suggestions"
             :key="suggestion"
@@ -109,50 +108,37 @@
 
       <section class="workspace-section" aria-labelledby="workspace-title">
         <div class="section-heading">
-          <div>
-            <span class="section-kicker">Workspace</span>
-            <h2 id="workspace-title">Manage and review your AgriAgent system</h2>
-          </div>
-          <button class="history-btn" @click="go('/history')">View Detection History →</button>
+          <h2 id="workspace-title">{{ tr('home.workspaceTitle') }}</h2>
         </div>
 
         <div class="card-grid">
-          <div class="entry-card" @click="go('/ai-chat')">
-            <div class="icon">🤖</div>
-            <h3>AI Agent</h3>
-            <p>Continue a conversation, upload plant images, or run a quick diagnosis.</p>
-          </div>
-
-          <div class="entry-card" @click="go('/data-analysis')">
-            <div class="icon">📊</div>
-            <h3>Data Analytics</h3>
-            <p>Explore disease patterns, detection trends, and model performance metrics.</p>
-          </div>
-
-          <div class="entry-card" @click="go('/training')">
-            <div class="icon">🧠</div>
-            <h3>Training Records</h3>
-            <p>Review imported models, training records, evaluation metrics, and test predictions.</p>
-          </div>
-
-          <div class="entry-card" @click="go('/knowledge')">
-            <div class="icon">📖</div>
-            <h3>{{ tr('home.knowledgeTitle') }}</h3>
-            <p>{{ tr('home.knowledgeDesc') }}</p>
-          </div>
+          <button
+            v-for="card in workspaceCards"
+            :key="card.route"
+            type="button"
+            class="entry-card"
+            @click="go(card.route)"
+          >
+            <span class="icon">{{ card.icon }}</span>
+            <span class="card-copy">
+              <strong>{{ tr(card.titleKey) }}</strong>
+              <small>{{ tr(card.descriptionKey) }}</small>
+            </span>
+            <span class="card-action">{{ tr(card.actionKey) }} <b>→</b></span>
+          </button>
         </div>
       </section>
 
       <div class="features">
-        <span>⚡ Real-time Detection</span>
-        <span>🛡️ Reliable Model Results</span>
-        <span>💬 Natural Language Control</span>
-        <span>🌱 Fruits & Vegetables</span>
+        <span>⚡ {{ tr('home.featureRealtime') }}</span>
+        <span>🛡️ {{ tr('home.featureReliable') }}</span>
+        <span>💬 {{ tr('home.featureLanguage') }}</span>
+        <span>🌱 {{ tr('home.featureCrops') }}</span>
       </div>
     </main>
 
     <footer>
-      AgriAgent © 2026 — Smart Farming with Conversational AI
+      {{ tr('home.footer') }}
     </footer>
   </div>
 </template>
@@ -185,6 +171,13 @@ const suggestions = computed(() => [
   tr('home.suggestionModels'),
   tr('home.suggestionRecent'),
 ])
+
+const workspaceCards = [
+  { icon: '🤖', route: '/ai-chat', titleKey: 'home.cardDiagnosisTitle', descriptionKey: 'home.cardDiagnosisDesc', actionKey: 'home.cardDiagnosisAction' },
+  { icon: '🕘', route: '/history', titleKey: 'home.cardHistoryTitle', descriptionKey: 'home.cardHistoryDesc', actionKey: 'home.cardHistoryAction' },
+  { icon: '📊', route: '/data-analysis', titleKey: 'home.cardAnalyticsTitle', descriptionKey: 'home.cardAnalyticsDesc', actionKey: 'home.cardAnalyticsAction' },
+  { icon: '📖', route: '/knowledge', titleKey: 'home.cardKnowledgeTitle', descriptionKey: 'home.cardKnowledgeDesc', actionKey: 'home.cardKnowledgeAction' },
+]
 
 const go = (path) => {
   router.push(path)
@@ -301,19 +294,24 @@ h1 span {
 
 .card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
   width: 100%;
   max-width: 900px;
 }
 
 .entry-card {
+  display: flex;
+  min-height: 158px;
+  flex-direction: column;
+  align-items: flex-start;
   background: white;
   border: 1px solid #e5e7eb;
-  border-radius: 20px;
-  padding: 24px;
+  border-radius: 16px;
+  padding: 18px;
   text-align: left;
   cursor: pointer;
+  font: inherit;
   transition: 0.2s;
 }
 
@@ -323,16 +321,8 @@ h1 span {
 }
 
 .icon {
-  font-size: 28px;
-  margin-bottom: 12px;
-}
-
-.history-btn {
-  margin-top: 30px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  color: #6b7280;
+  font-size: 24px;
+  margin-bottom: 10px;
 }
 
 .features {
@@ -362,7 +352,7 @@ footer {
 .home-content {
   flex: 1;
   width: 100%;
-  max-width: 1120px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 0 32px 44px;
 }
@@ -621,56 +611,73 @@ footer {
 }
 
 .workspace-section {
-  padding: 34px;
+  padding: 26px;
   border: 1px solid #e5e7eb;
-  border-radius: 28px;
+  border-radius: 22px;
   background: rgba(255, 255, 255, 0.82);
 }
 
 .section-heading {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  gap: 24px;
-  margin-bottom: 24px;
+  align-items: center;
+  margin-bottom: 18px;
   text-align: left;
 }
 
-.section-kicker {
-  color: #16a34a;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
 .section-heading h2 {
-  margin: 7px 0 0;
+  margin: 0;
   color: #111827;
-  font-size: 25px;
+  font-size: 22px;
 }
 
 .workspace-section .card-grid {
   max-width: none;
 }
 
-.entry-card h3 {
-  margin: 0 0 8px;
+.card-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.card-copy strong {
   color: #111827;
-  font-size: 18px;
+  font-size: 16px;
 }
 
-.entry-card p {
-  margin: 0;
+.card-copy small {
+  margin-top: 6px;
   color: #6b7280;
-  line-height: 1.6;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
-.section-heading .history-btn {
-  margin-top: 0;
+.card-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #f0fdf4;
   color: #15803d;
+  font-size: 12px;
   font-weight: 600;
-  white-space: nowrap;
+}
+
+.card-action b {
+  font-size: 14px;
+  transition: transform .2s ease;
+}
+
+.entry-card:hover .card-action b {
+  transform: translateX(3px);
+}
+
+@media (max-width: 980px) {
+  .card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 760px) {
@@ -713,7 +720,6 @@ footer {
 
   .section-heading {
     align-items: flex-start;
-    flex-direction: column;
   }
 
   .card-grid {

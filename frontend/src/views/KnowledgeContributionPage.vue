@@ -2,7 +2,9 @@
   <div class="knowledge-page">
     <header class="knowledge-header">
       <div class="header-brand">
-        <router-link to="/" class="back-button" :aria-label="tr('knowledge.backHome')">←</router-link>
+        <router-link to="/" class="icon-button" :aria-label="tr('knowledge.backHome')">
+          <el-icon><ArrowLeft /></el-icon>
+        </router-link>
         <router-link to="/" class="brand-link">🌿 AgriAgent</router-link>
         <span class="header-divider" />
         <span class="header-title">{{ tr('nav.knowledge') }}</span>
@@ -164,6 +166,7 @@ import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 import { useLocaleStore } from '@/stores/locale'
 import { t } from '@/utils/i18n'
 import { ElMessage } from 'element-plus'
+import { ArrowLeft } from '@element-plus/icons-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 
 const localeStore = useLocaleStore()
@@ -300,16 +303,8 @@ onMounted(fetchSubmissions)
   gap: 14px;
 }
 
-.back-button {
-  display: grid;
-  width: 38px;
-  height: 38px;
-  place-items: center;
-  border: 1px solid #dce5df;
-  border-radius: 12px;
-  color: #34473b;
-  text-decoration: none;
-}
+.icon-button { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; color: #68766d; text-decoration: none; }
+.icon-button:hover { background: #edf2ee; color: #25372c; }
 
 .brand-link {
   color: #15803d;

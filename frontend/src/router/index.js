@@ -90,6 +90,7 @@ const routes = [
     meta: {
       title: 'Training',
       requiresAuth: true,
+      requiresAdmin: true,
     },
   },
 

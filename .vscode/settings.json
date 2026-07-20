@@ -1,6 +1,8 @@
 {
   // Python 解释器路径（指向项⽬虚拟环境）
   "python.defaultInterpreterPath": "${workspaceFolder}/backend/.venv/bin/python",
+  "python.envFile": "${workspaceFolder}/backend/.env",
+  "python.terminal.useEnvFile": true,
   "python.analysis.typeCheckingMode": "basic",
   "python.analysis.autoImportCompletions": true,
   // 编辑器设置

@@ -2,14 +2,15 @@
   <div class="admin-page">
     <header class="admin-header">
       <div class="header-left">
-        <router-link to="/" class="back-button">←</router-link>
+        <router-link to="/" class="icon-button" :aria-label="copy.home">
+          <el-icon><ArrowLeft /></el-icon>
+        </router-link>
         <router-link to="/" class="brand">🌿 AgriAgent</router-link>
         <span class="divider" />
         <strong>{{ copy.title }}</strong>
       </div>
       <div class="header-right">
         <LanguageSwitcher />
-        <router-link to="/" class="home-link">{{ copy.home }}</router-link>
       </div>
     </header>
 
@@ -212,6 +213,7 @@ import {
   rejectKnowledgeDocumentApi,
 } from '@/api/knowledge'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
+import { ArrowLeft } from '@element-plus/icons-vue'
 import { useLocaleStore } from '@/stores/locale'
 import { useUserStore } from '@/stores/user'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -501,10 +503,10 @@ onMounted(async () => {
   padding: 0 36px; border-bottom: 1px solid #e5e9e6; background: #fff;
 }
 .header-left, .header-right { display: flex; align-items: center; gap: 13px; }
-.back-button { display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid #dde4df; border-radius: 10px; color: #374151; text-decoration: none; }
+.icon-button { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; color: #68766d; text-decoration: none; }
+.icon-button:hover { background: #edf2ee; color: #25372c; }
 .brand { color: #15803d; font-size: 19px; font-weight: 800; text-decoration: none; }
 .divider { width: 1px; height: 22px; background: #dfe5e1; }
-.home-link { padding: 8px 12px; border: 1px solid #dde4df; border-radius: 9px; color: #374151; text-decoration: none; }
 .admin-container { width: min(1240px, calc(100% - 40px)); margin: 0 auto; padding: 34px 0 60px; }
 .page-title h1 { margin: 0 0 5px; font-size: 30px; }
 .page-title p, .panel-header p { margin: 0; color: #7b867e; font-size: 13px; }

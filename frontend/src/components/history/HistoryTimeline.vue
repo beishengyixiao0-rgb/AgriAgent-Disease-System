@@ -71,6 +71,9 @@
                   <el-icon><ChatDotRound /></el-icon>
                   {{ locale === 'en' ? 'Ask AI' : '询问 AI' }}
                 </button>
+                <button type="button" :aria-label="locale === 'en' ? 'Download report' : '下载报告'" @click.stop="$emit('download', { task, format: 'pdf' })">
+                  <el-icon><Download /></el-icon>
+                </button>
                 <button class="danger" type="button" :aria-label="locale === 'en' ? 'Delete task' : '删除任务'" @click.stop="$emit('delete', task)">
                   <el-icon><Delete /></el-icon>
                 </button>
@@ -100,6 +103,7 @@ import {
   ChatDotRound,
   Collection,
   Delete,
+  Download,
   Film,
   Filter,
   Picture,
@@ -113,7 +117,7 @@ const props = defineProps({
   locale: { type: String, default: 'zh' },
 })
 
-const emit = defineEmits(['open', 'ask-ai', 'delete', 'clear', 'update-treatment'])
+const emit = defineEmits(['open', 'ask-ai', 'delete', 'download', 'clear', 'update-treatment'])
 
 const treatmentOptions = computed(() => props.locale === 'en'
   ? [
@@ -233,7 +237,7 @@ function taskIcon(type) {
 <style scoped>
 .timeline-shell { position: relative; min-height: 180px; }
 .timeline-line { position: absolute; top: 42px; bottom: 28px; left: 19px; width: 1px; background: #dfe5e1; }
-.date-label { display: flex; align-items: center; gap: 8px; margin: 22px 0 10px 42px; color: #7a867e; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.date-label { display: flex; align-items: center; gap: 8px; margin: 22px 0 10px 42px; color: #7a867e; font-size: 13px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .date-label:first-child { margin-top: 0; }
 .timeline-row { position: relative; display: flex; align-items: stretch; gap: 10px; margin-bottom: 12px; }
 .timeline-marker { width: 30px; flex: 0 0 30px; display: flex; justify-content: center; padding-top: 29px; z-index: 1; }
@@ -250,14 +254,14 @@ function taskIcon(type) {
 .task-avatar.purple { background: #f2ecff; color: #7955b7; }
 .task-main { flex: 1; min-width: 0; }
 .task-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.task-title-row h3 { margin: 0; color: #1a271f; font-size: 14px; font-weight: 700; }
-.type-chip { padding: 3px 7px; border-radius: 999px; background: #eef3f0; color: #68756d; font-size: 9px; font-weight: 700; }
-.status-chip { padding: 3px 8px; border-radius: 999px; border: 1px solid #dfe5e1; background: #f5f7f6; color: #6c7870; font-size: 10px; font-weight: 700; }
+.task-title-row h3 { margin: 0; color: #1a271f; font-size: 16px; font-weight: 700; }
+.type-chip { padding: 3px 7px; border-radius: 999px; background: #eef3f0; color: #68756d; font-size: 11px; font-weight: 700; }
+.status-chip { padding: 3px 8px; border-radius: 999px; border: 1px solid #dfe5e1; background: #f5f7f6; color: #6c7870; font-size: 11px; font-weight: 700; }
 .status-chip.completed { border-color: #c9ead5; background: #eaf8ef; color: #18854b; }
 .status-chip.processing { border-color: #cce1f5; background: #ebf5ff; color: #337ecc; }
 .status-chip.pending { border-color: #f2dfb9; background: #fff6e3; color: #b8790b; }
 .status-chip.failed { border-color: #f0cccc; background: #fff0f0; color: #c94444; }
-.risk-chip, .treatment-chip { padding: 3px 8px; border-radius: 999px; font-size: 10px; font-weight: 750; }
+.risk-chip, .treatment-chip { padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 750; }
 .risk-low { background: #e9f8ef; color: #18854b; }
 .risk-moderate { background: #fff6e3; color: #ad730d; }
 .risk-high { background: #fff0e7; color: #c45118; }
@@ -267,18 +271,18 @@ function taskIcon(type) {
 .treatment-in_progress { background: #eaf4ff; color: #337ecc; }
 .treatment-monitoring { background: #f3efff; color: #7657af; }
 .treatment-treated, .treatment-resolved { background: #e9f8ef; color: #18854b; }
-.task-subtitle { margin: 4px 0 8px; color: #7b877f; font-size: 12px; }
+.task-subtitle { margin: 4px 0 8px; color: #7b877f; font-size: 13px; }
 .task-subtitle span { margin: 0 4px; color: #b0b7b2; }
 .class-preview { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 8px; }
-.class-preview span { padding: 3px 7px; border: 1px solid #e1e9e3; border-radius: 7px; background: #f8faf8; color: #637068; font-size: 9px; }
+.class-preview span { padding: 3px 7px; border: 1px solid #e1e9e3; border-radius: 7px; background: #f8faf8; color: #637068; font-size: 11px; }
 .class-preview b { margin-left: 3px; color: #277a49; }
-.task-metrics { display: flex; gap: 15px; flex-wrap: wrap; color: #7b877f; font-size: 11px; }
+.task-metrics { display: flex; gap: 15px; flex-wrap: wrap; color: #7b877f; font-size: 12px; }
 .task-metrics b { color: #34443a; font-weight: 700; }
 .task-side { flex: 0 0 auto; min-width: 132px; text-align: right; }
-.task-side time, .task-side code { display: block; color: #879189; font-size: 10px; }
+.task-side time, .task-side code { display: block; color: #879189; font-size: 11px; }
 .task-side code { margin-top: 3px; }
 .task-actions { display: flex; justify-content: flex-end; gap: 5px; margin-top: 9px; }
-.task-actions button { border: 0; border-radius: 8px; background: #f3f6f4; color: #617067; padding: 5px 8px; display: inline-flex; align-items: center; gap: 4px; font-size: 10px; cursor: pointer; }
+.task-actions button { border: 0; border-radius: 8px; background: #f3f6f4; color: #617067; padding: 6px 9px; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; cursor: pointer; }
 .task-actions button:hover { background: #e9f6ed; color: #18854b; }
 .task-actions button.danger { padding-inline: 6px; }
 .task-actions button.danger:hover { background: #fff0f0; color: #c94444; }
@@ -286,9 +290,9 @@ function taskIcon(type) {
 
 .empty-state { text-align: center; padding: 58px 20px; background: #fff; border: 1px dashed #d9e0dc; border-radius: 18px; color: #7b877f; }
 .empty-icon { width: 48px; height: 48px; margin: 0 auto 12px; border-radius: 50%; display: grid; place-items: center; background: #f1f5f2; color: #89958d; font-size: 21px; }
-.empty-state h3 { margin: 0; color: #34443a; font-size: 14px; }
-.empty-state p { margin: 7px 0 14px; font-size: 12px; }
-.empty-state button { border: 0; background: transparent; color: #16834a; font-size: 12px; cursor: pointer; }
+.empty-state h3 { margin: 0; color: #34443a; font-size: 16px; }
+.empty-state p { margin: 7px 0 14px; font-size: 13px; }
+.empty-state button { border: 0; background: transparent; color: #16834a; font-size: 13px; cursor: pointer; }
 
 @media (max-width: 680px) {
   .history-card { align-items: flex-start; flex-wrap: wrap; padding-right: 34px; }

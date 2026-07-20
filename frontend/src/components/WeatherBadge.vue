@@ -66,10 +66,17 @@ async function loadWeather() {
 
   try {
     const location = await getBrowserLocation()
+    let city = localeStore.locale === 'en' ? 'Current city' : '当前城市'
+    try {
+      const approximateLocation = await getApproximateLocationByIp()
+      city = approximateLocation.city || city
+    } catch {
+      // 城市名称仅用于展示；IP 城市解析失败不影响精确坐标天气。
+    }
     weather.value = {
       ...await getWeatherByCoordinates({
         ...location,
-        city: localeStore.locale === 'en' ? 'Current location' : '当前位置',
+        city,
       }),
       approximate: false,
     }
@@ -97,6 +104,11 @@ async function loadWeather() {
 onMounted(() => {
   const cached = readWeatherCache()
   if (!cached) return
+  const invalidCity = !cached.city
+    || cached.city === '当前位置'
+    || cached.city === 'Current location'
+    || /^-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?$/.test(cached.city)
+  if (invalidCity) return
   weather.value = cached
   status.value = 'success'
 })

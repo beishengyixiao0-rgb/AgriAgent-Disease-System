@@ -31,6 +31,7 @@ class CameraWs {
   constructor(options) {
     this.ws = null;
     this.isConnected = false;
+    this.closedByClient = false;
 
     // 检测配置
     this.mode = options.mode || "cpu";
@@ -54,13 +55,24 @@ class CameraWs {
       return;
     }
 
+    const token = localStorage.getItem("rsod_token");
+    if (!token) {
+      this.onError("登录状态已失效，请重新登录后使用实时检测");
+      return false;
+    }
+
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
 
     const host = window.location.host;
 
     const displayLanguage = localStorage.getItem("rsod_locale") === "en" ? "en" : "zh";
-    const wsUrl = `${protocol}//${host}/api/detection/camera?display_language=${encodeURIComponent(displayLanguage)}`;
+    const params = new URLSearchParams({
+      token,
+      display_language: displayLanguage,
+    });
+    const wsUrl = `${protocol}//${host}/api/detection/camera?${params.toString()}`;
 
+    this.closedByClient = false;
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {
@@ -89,10 +101,16 @@ class CameraWs {
       }
     };
 
-    this.ws.onclose = () => {
+    this.ws.onclose = (event) => {
       this.isConnected = false;
 
-      console.log("[CameraWs] 连接已关闭");
+      console.log("[CameraWs] 连接已关闭", event.code, event.reason);
+
+      if (!this.closedByClient && event.code !== 1000) {
+        const reason = event.reason
+          || (event.code === 1008 ? "实时检测认证失败，请重新登录" : "WebSocket 连接中断，请检查后端服务和代理配置");
+        this.onError(reason);
+      }
 
       this.onClose();
     };
@@ -100,8 +118,10 @@ class CameraWs {
     this.ws.onerror = (err) => {
       console.error("[CameraWs] 连接错误:", err);
 
-      this.onError("WebSocket 连接失败，请检查后端服务");
+      // 浏览器 onerror 不提供服务端关闭原因，交给 onclose 统一提示，避免重复弹窗。
     };
+
+    return true;
   }
 
   /**
@@ -134,6 +154,7 @@ class CameraWs {
    * 关闭连接
    */
   close() {
+    this.closedByClient = true;
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(
         JSON.stringify({
