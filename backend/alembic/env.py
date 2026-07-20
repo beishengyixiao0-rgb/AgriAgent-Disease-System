@@ -21,6 +21,7 @@ from pathlib import Path
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
+from app.config.settings import settings
 
 # __file__ = alembic/env.py
 # __file__.parent = alembic/
@@ -66,7 +67,7 @@ def run_migrations_offline() -> None:
         - 不创建数据库连接，直接输出 SQL 到控制台或文件
     """
     # 从 alembic.ini 读取数据库连接 URL
-    url = config.get_main_option("sqlalchemy.url")
+    config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
 
     # 配置迁移上下文
     context.configure(
