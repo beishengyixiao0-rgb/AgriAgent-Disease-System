@@ -2,10 +2,10 @@
   <div class="admin-page">
     <header class="admin-header">
       <div class="header-left">
-        <router-link to="/" class="icon-button" :aria-label="copy.home">
+        <router-link to="/home" class="icon-button" :aria-label="copy.home">
           <el-icon><ArrowLeft /></el-icon>
         </router-link>
-        <router-link to="/" class="brand">🌿 AgriAgent</router-link>
+        <router-link to="/home" class="brand">🌿 AgriAgent</router-link>
         <span class="divider" />
         <strong>{{ copy.title }}</strong>
       </div>
@@ -489,7 +489,7 @@ onMounted(async () => {
   }
   if (!userStore.isAdmin) {
     ElMessage.error(copy.value.noPermission)
-    router.replace('/')
+    router.replace('/home')
     return
   }
   await Promise.all([fetchUsers(), fetchKnowledge()])

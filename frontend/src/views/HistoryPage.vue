@@ -2,7 +2,7 @@
   <div class="history-page">
     <header class="history-header">
       <div class="header-left">
-        <router-link to="/" class="icon-button" :aria-label="copy.back">
+        <router-link to="/home" class="icon-button" :aria-label="copy.back">
           <el-icon><ArrowLeft /></el-icon>
         </router-link>
         <div class="brand-mark"><el-icon><Grape /></el-icon></div>

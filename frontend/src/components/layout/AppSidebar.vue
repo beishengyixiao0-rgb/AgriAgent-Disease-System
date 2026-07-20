@@ -40,7 +40,7 @@ const activeMenu = computed(() => {
 
 /** 侧边栏菜单配置 */
 const menuItems = computed(() => [
-  { path: '/', titleKey: 'nav.home', icon: House },
+  { path: '/home', titleKey: 'nav.home', icon: House },
   { path: '/ai-chat', titleKey: 'nav.chat', icon: ChatDotRound },
   { path: '/data-analysis', titleKey: 'nav.dashboard', icon: DataAnalysis },
   { path: '/history', titleKey: 'nav.history', icon: Clock },

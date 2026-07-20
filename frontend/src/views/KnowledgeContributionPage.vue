@@ -2,10 +2,10 @@
   <div class="knowledge-page">
     <header class="knowledge-header">
       <div class="header-brand">
-        <router-link to="/" class="icon-button" :aria-label="tr('knowledge.backHome')">
+        <router-link to="/home" class="icon-button" :aria-label="tr('knowledge.backHome')">
           <el-icon><ArrowLeft /></el-icon>
         </router-link>
-        <router-link to="/" class="brand-link">🌿 AgriAgent</router-link>
+        <router-link to="/home" class="brand-link">🌿 AgriAgent</router-link>
         <span class="header-divider" />
         <span class="header-title">{{ tr('nav.knowledge') }}</span>
       </div>

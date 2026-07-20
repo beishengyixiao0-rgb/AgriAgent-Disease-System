@@ -2,7 +2,7 @@
   <div class="analysis-page">
     <header class="analysis-header">
       <div class="header-left">
-        <router-link to="/" class="back-btn"> ← </router-link>
+        <router-link to="/home" class="back-btn"> ← </router-link>
 
         <div class="title-row">
           <div class="title-icon">🌿</div>
