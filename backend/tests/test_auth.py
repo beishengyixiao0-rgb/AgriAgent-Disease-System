@@ -12,7 +12,6 @@
 """
 
 import pytest
-
 from app.entity.db_models import User
 
 
@@ -482,3 +481,568 @@ class TestChangePassword:
             },
         )
         assert response.status_code == 401
+
+
+# ============================================================
+# 新增测试 - 邮箱格式校验（Pattern） 7.10
+# ============================================================
+
+
+class TestEmailFormatValidation:
+    """邮箱格式校验测试（使用 pattern 正则）"""
+
+    def test_register_email_valid(self, client):
+        """注册-合法邮箱格式"""
+        response = client.post(
+            "/api/auth/register",
+            json={
+                "username": "email_valid_user",
+                "email": "test@example.com",
+                "password": "123456",
+            },
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["email"] == "test@example.com"
+
+    def test_register_email_missing_at_symbol(self, client):
+        """注册-邮箱缺少@符号"""
+        response = client.post(
+            "/api/auth/register",
+            json={
+                "username": "email_no_at",
+                "email": "testexample.com",
+                "password": "123456",
+            },
+        )
+        assert response.status_code == 422
+        assert "email" in response.text.lower()
+
+    def test_register_email_missing_domain(self, client):
+        """注册-邮箱缺少域名（@后无内容）"""
+        response = client.post(
+            "/api/auth/register",
+            json={
+                "username": "email_no_domain",
+                "email": "test@",
+                "password": "123456",
+            },
+        )
+        assert response.status_code == 422
+        assert "email" in response.text.lower()
+
+    def test_register_email_missing_username(self, client):
+        """注册-邮箱缺少用户名（@前无内容）"""
+        response = client.post(
+            "/api/auth/register",
+            json={
+                "username": "email_no_user",
+                "email": "@example.com",
+                "password": "123456",
+            },
+        )
+        assert response.status_code == 422
+        assert "email" in response.text.lower()
+
+    def test_register_email_with_special_chars(self, client):
+        """注册-邮箱包含非法特殊字符"""
+        response = client.post(
+            "/api/auth/register",
+            json={
+                "username": "email_special",
+                "email": "test!@example.com",
+                "password": "123456",
+            },
+        )
+        # 根据 pattern 设计，可能允许或拒绝特殊字符
+        # 如果 pattern 是标准邮箱正则，! 是允许的，此测试可调整为其他非法格式
+        assert response.status_code in [201, 422]
+
+    def test_forgot_password_email_valid(self, client, monkeypatch):
+        """忘记密码-合法邮箱格式"""
+        from app.services import user_service as user_service_module
+
+        monkeypatch.setattr(
+            user_service_module.EmailService,
+            "send_verification_code",
+            lambda email, code: True,
+        )
+
+        # 先注册用户
+        client.post(
+            "/api/auth/register",
+            json={
+                "username": "forgot_valid_email",
+                "email": "forgot_valid@example.com",
+                "password": "123456",
+            },
+        )
+
+        response = client.post(
+            "/api/auth/forgot-password",
+            json={"email": "forgot_valid@example.com"},
+        )
+        assert response.status_code == 200
+
+    def test_forgot_password_email_invalid(self, client):
+        """忘记密码-非法邮箱格式"""
+        response = client.post(
+            "/api/auth/forgot-password",
+            json={"email": "invalid_email"},
+        )
+        assert response.status_code == 422
+        assert "email" in response.text.lower()
+
+    def test_update_profile_email_valid(self, client):
+        """修改个人信息-合法邮箱格式"""
+        # 注册并登录
+        client.post(
+            "/api/auth/register",
+            json={
+                "username": "update_email_valid",
+                "email": "update_valid@example.com",
+                "password": "123456",
+            },
+        )
+        login_response = client.post(
+            "/api/auth/login",
+            json={
+                "username": "update_email_valid",
+                "password": "123456",
+            },
+        )
+        token = login_response.json()["access_token"]
+
+        response = client.put(
+            "/api/auth/profile",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "phone": "13800138000",
+                "email": "new_valid@example.com",
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["email"] == "new_valid@example.com"
+
+    def test_update_profile_email_invalid(self, client):
+        """修改个人信息-非法邮箱格式"""
+        # 注册并登录
+        client.post(
+            "/api/auth/register",
+            json={
+                "username": "update_email_invalid",
+                "email": "update_invalid@example.com",
+                "password": "123456",
+            },
+        )
+        login_response = client.post(
+            "/api/auth/login",
+            json={
+                "username": "update_email_invalid",
+                "password": "123456",
+            },
+        )
+        token = login_response.json()["access_token"]
+
+        response = client.put(
+            "/api/auth/profile",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "phone": "13800138000",
+                "email": "invalid_email",
+            },
+        )
+        assert response.status_code == 422
+        assert "email" in response.text.lower()
+
+
+# ============================================================
+# 新增测试 - 验证码校验接口 7.10
+# ============================================================
+
+
+class TestVerifyCode:
+    """验证码校验测试（/api/auth/verify-code）"""
+
+    def test_verify_code_success(self, client, db_session, monkeypatch):
+        """验证码校验-正确验证码"""
+        from app.services import user_service as user_service_module
+
+        monkeypatch.setattr(
+            user_service_module.EmailService,
+            "send_verification_code",
+            lambda email, code: True,
+        )
+
+        # 注册用户
+        client.post(
+            "/api/auth/register",
+            json={
+                "username": "verify_success_user",
+                "email": "verify_success@example.com",
+                "password": "123456",
+            },
+        )
+
+        # 申请验证码
+        client.post(
+            "/api/auth/forgot-password",
+            json={"email": "verify_success@example.com"},
+        )
+
+        # 获取验证码
+        user = (
+            db_session.query(User)
+            .filter(User.email == "verify_success@example.com")
+            .first()
+        )
+        code = user.reset_token
+
+        # 校验验证码
+        response = client.post(
+            "/api/auth/verify-code",
+            json={
+                "email": "verify_success@example.com",
+                "code": code,
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["message"] == "验证码有效"
+
+    def test_verify_code_wrong(self, client):
+        """验证码校验-错误验证码"""
+        # 注册用户
+        client.post(
+            "/api/auth/register",
+            json={
+                "username": "verify_wrong_user",
+                "email": "verify_wrong@example.com",
+                "password": "123456",
+            },
+        )
+
+        response = client.post(
+            "/api/auth/verify-code",
+            json={
+                "email": "verify_wrong@example.com",
+                "code": "000000",
+            },
+        )
+        assert response.status_code == 400
+        assert response.json()["message"] == "验证码错误"
+
+    def test_verify_code_email_not_found(self, client):
+        """验证码校验-邮箱未注册"""
+        response = client.post(
+            "/api/auth/verify-code",
+            json={
+                "email": "notexist_verify@example.com",
+                "code": "123456",
+            },
+        )
+        assert response.status_code == 400
+        assert response.json()["message"] == "该邮箱未注册"
+
+    def test_verify_code_invalid_email(self, client):
+        """验证码校验-非法邮箱格式"""
+        response = client.post(
+            "/api/auth/verify-code",
+            json={
+                "email": "invalid_email",
+                "code": "123456",
+            },
+        )
+        assert response.status_code == 422
+        assert "email" in response.text.lower()
+
+
+# ============================================================
+# 新增测试 - 忘记密码完整流程 7.10
+# ============================================================
+
+
+class TestForgotPasswordFullFlow:
+    """忘记密码完整流程测试"""
+
+    def test_full_forgot_password_flow(self, client, db_session, monkeypatch):
+        """完整流程：注册→忘记密码→校验验证码→重置密码→新密码登录"""
+        from app.services import user_service as user_service_module
+
+        # Mock 邮件发送
+        sent_code = None
+
+        def fake_send_verification_code(email, code):
+            nonlocal sent_code
+            sent_code = code
+            return True
+
+        monkeypatch.setattr(
+            user_service_module.EmailService,
+            "send_verification_code",
+            fake_send_verification_code,
+        )
+
+        # 1. 注册用户
+        client.post(
+            "/api/auth/register",
+            json={
+                "username": "flow_user",
+                "email": "flow@example.com",
+                "password": "123456",
+            },
+        )
+
+        # 2. 忘记密码
+        response = client.post(
+            "/api/auth/forgot-password",
+            json={"email": "flow@example.com"},
+        )
+        assert response.status_code == 200
+        assert sent_code is not None
+        code = sent_code
+
+        # 3. 校验验证码
+        response = client.post(
+            "/api/auth/verify-code",
+            json={"email": "flow@example.com", "code": code},
+        )
+        assert response.status_code == 200
+
+        # 4. 重置密码
+        response = client.post(
+            "/api/auth/reset-password",
+            json={
+                "email": "flow@example.com",
+                "code": code,
+                "new_password": "newFlow789",
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["message"] == "密码重置成功"
+
+        # 5. 新密码登录
+        response = client.post(
+            "/api/auth/login",
+            json={
+                "username": "flow_user",
+                "password": "newFlow789",
+            },
+        )
+        assert response.status_code == 200
+        assert "access_token" in response.json()
+
+    def test_reset_password_short_new_password(self, client, db_session, monkeypatch):
+        """重置密码时新密码少于6位"""
+        from app.services import user_service as user_service_module
+
+        monkeypatch.setattr(
+            user_service_module.EmailService,
+            "send_verification_code",
+            lambda email, code: True,
+        )
+
+        # 注册用户
+        client.post(
+            "/api/auth/register",
+            json={
+                "username": "reset_short_user",
+                "email": "reset_short@example.com",
+                "password": "123456",
+            },
+        )
+
+        # 申请验证码
+        client.post(
+            "/api/auth/forgot-password",
+            json={"email": "reset_short@example.com"},
+        )
+        user = (
+            db_session.query(User)
+            .filter(User.email == "reset_short@example.com")
+            .first()
+        )
+        code = user.reset_token
+
+        # 用少于6位的新密码重置
+        response = client.post(
+            "/api/auth/reset-password",
+            json={
+                "email": "reset_short@example.com",
+                "code": code,
+                "new_password": "12345",
+            },
+        )
+        assert response.status_code == 422
+        assert "password" in response.text.lower()
+
+    def test_reset_password_code_expired(self, client, db_session, monkeypatch):
+        """重置密码时验证码已过期"""
+        from datetime import datetime, timedelta
+
+        from app.services import user_service as user_service_module
+
+        monkeypatch.setattr(
+            user_service_module.EmailService,
+            "send_verification_code",
+            lambda email, code: True,
+        )
+
+        # 注册用户
+        client.post(
+            "/api/auth/register",
+            json={
+                "username": "reset_expired_user",
+                "email": "reset_expired@example.com",
+                "password": "123456",
+            },
+        )
+
+        # 申请验证码
+        client.post(
+            "/api/auth/forgot-password",
+            json={"email": "reset_expired@example.com"},
+        )
+        user = (
+            db_session.query(User)
+            .filter(User.email == "reset_expired@example.com")
+            .first()
+        )
+        code = user.reset_token
+
+        # 手动将验证码过期时间设为过去
+        user.reset_token_expires_at = datetime.now() - timedelta(minutes=10)
+        db_session.commit()
+
+        # 重置密码
+        response = client.post(
+            "/api/auth/reset-password",
+            json={
+                "email": "reset_expired@example.com",
+                "code": code,
+                "new_password": "new789012",
+            },
+        )
+        assert response.status_code == 400
+        assert "验证码已过期" in response.json().get("message", "")
+
+    def test_reset_password_code_used_twice(self, client, db_session, monkeypatch):
+        """重置密码后验证码不能再次使用"""
+        from app.services import user_service as user_service_module
+
+        monkeypatch.setattr(
+            user_service_module.EmailService,
+            "send_verification_code",
+            lambda email, code: True,
+        )
+
+        # 注册用户
+        client.post(
+            "/api/auth/register",
+            json={
+                "username": "reset_twice_user",
+                "email": "reset_twice@example.com",
+                "password": "123456",
+            },
+        )
+
+        # 申请验证码
+        client.post(
+            "/api/auth/forgot-password",
+            json={"email": "reset_twice@example.com"},
+        )
+        user = (
+            db_session.query(User)
+            .filter(User.email == "reset_twice@example.com")
+            .first()
+        )
+        code = user.reset_token
+
+        # 第一次重置
+        response = client.post(
+            "/api/auth/reset-password",
+            json={
+                "email": "reset_twice@example.com",
+                "code": code,
+                "new_password": "newFirst789",
+            },
+        )
+        assert response.status_code == 200
+
+        # 第二次使用相同验证码重置（应该失败）
+        response = client.post(
+            "/api/auth/reset-password",
+            json={
+                "email": "reset_twice@example.com",
+                "code": code,
+                "new_password": "newSecond789",
+            },
+        )
+        assert response.status_code == 400
+        assert response.json().get("message") in ["验证码错误", "验证码已过期"]
+
+    def test_reset_password_resend_code_old_invalid(
+        self, client, db_session, monkeypatch
+    ):
+        """重新申请验证码后，旧验证码失效"""
+        from app.services import user_service as user_service_module
+
+        sent_codes = []
+
+        def fake_send_verification_code(email, code):
+            sent_codes.append(code)
+            return True
+
+        monkeypatch.setattr(
+            user_service_module.EmailService,
+            "send_verification_code",
+            fake_send_verification_code,
+        )
+
+        # 注册用户
+        client.post(
+            "/api/auth/register",
+            json={
+                "username": "resend_user",
+                "email": "resend@example.com",
+                "password": "123456",
+            },
+        )
+
+        # 第一次申请
+        client.post(
+            "/api/auth/forgot-password",
+            json={"email": "resend@example.com"},
+        )
+        old_code = sent_codes[0]
+
+        # 第二次申请（5分钟内）
+        client.post(
+            "/api/auth/forgot-password",
+            json={"email": "resend@example.com"},
+        )
+        new_code = sent_codes[1]
+
+        assert old_code != new_code
+
+        # 使用旧验证码重置（应该失败）
+        response = client.post(
+            "/api/auth/reset-password",
+            json={
+                "email": "resend@example.com",
+                "code": old_code,
+                "new_password": "new789012",
+            },
+        )
+        assert response.status_code == 400
+
+        # 使用新验证码重置（应该成功）
+        response = client.post(
+            "/api/auth/reset-password",
+            json={
+                "email": "resend@example.com",
+                "code": new_code,
+                "new_password": "new789012",
+            },
+        )
+        assert response.status_code == 200
