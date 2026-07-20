@@ -69,17 +69,36 @@
         <h2>常见农业病害</h2>
         <p>AI精准识别各类农作物病害，提供专业防治建议</p>
       </div>
-      <div class="disease-cards">
-        <div
-          v-for="disease in diseaseInfo"
-          :key="disease.name"
-          class="disease-card"
-        >
-          <img :src="disease.image" :alt="disease.name" class="disease-image" />
-          <div class="disease-content">
-            <h4>{{ disease.name }}</h4>
-            <p>{{ disease.description }}</p>
+      <div class="disease-carousel-wrapper">
+        <div class="disease-cards">
+          <div
+            v-for="disease in visibleDiseases"
+            :key="disease.name"
+            class="disease-card"
+          >
+            <img
+              :src="disease.image"
+              :alt="disease.name"
+              class="disease-image"
+            />
+            <div class="disease-content">
+              <h4>{{ disease.name }}</h4>
+              <div class="disease-detail">
+                <p><strong>症状：</strong>{{ disease.symptoms }}</p>
+                <p><strong>发病规律：</strong>{{ disease.occurrence }}</p>
+                <p><strong>防治措施：</strong>{{ disease.control }}</p>
+              </div>
+            </div>
           </div>
+        </div>
+        <div class="carousel-indicators">
+          <button
+            v-for="(_, index) in totalPages"
+            :key="index"
+            class="indicator-btn"
+            :class="{ active: currentPage === index }"
+            @click="goToPage(index)"
+          ></button>
         </div>
       </div>
     </section>
@@ -118,12 +137,14 @@
 </template>
 
 <script setup>
+import { computed, onMounted, onUnmounted, ref } from "vue";
+
 const features = [
   {
     icon: "🔍",
     title: "AI病害检测",
     description:
-      "基于深度学习的计算机视觉技术，快速准确识别200+种农作物病虫害，准确率高达98%。",
+      "基于深度学习的计算机视觉技术，快速准确识别多种农作物病虫害，准确率高达98%。",
   },
   {
     icon: "💬",
@@ -178,33 +199,110 @@ const carouselImages = [
 const diseaseInfo = [
   {
     image:
-      "https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=tomato%20late%20blight%20disease%20on%20green%20leaves%2C%20dark%20green%20water-soaked%20spots%2C%20plant%20disease%20symptoms&image_size=square",
-    name: "番茄晚疫病",
-    description:
-      "由疫霉菌引起的毁灭性病害。叶片出现暗绿色水渍状斑点，逐渐变为褐色坏死斑，边缘有白色霉层。",
+      "https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=apple%20scab%20disease%20on%20green%20leaves%2C%20dark%20olive%20green%20scab-like%20spots%2C%20circular%20lesions%2C%20apple%20tree%20disease&image_size=square",
+    name: "苹果疮痂病",
+    symptoms:
+      "叶片正面出现圆形或不规则的橄榄绿色疮痂状斑点，边缘清晰，直径3-6毫米。病斑逐渐变为褐色或黑色，表面粗糙呈痂状隆起。严重时病斑连片，导致叶片畸形、扭曲或早期脱落。果实表面出现褐色圆形病斑，影响品质和商品价值。",
+    occurrence:
+      "病菌以菌丝体在病叶、病果上越冬，次年春季产生分生孢子，通过风雨传播。气温10-20℃、相对湿度70%以上时易发病。苹果谢花后至幼果期是侵染高峰期，降雨频繁的年份发病严重。",
+    control:
+      "选用抗病品种；冬季彻底清除落叶病果，集中烧毁；加强果园通风透光；谢花后及时喷药保护，可选用波尔多液、代森锰锌、三唑类杀菌剂等，每隔10-15天喷一次。",
   },
   {
     image:
-      "https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=apple%20tree%20canker%20disease%2C%20rotten%20bark%20on%20tree%20trunk%2C%20brown%20decayed%20wood%2C%20plant%20disease&image_size=square",
-    name: "苹果腐烂病",
-    description:
-      "俗称烂皮病，是苹果树枝干的重要病害。病菌侵染枝干皮层，导致皮层腐烂坏死。",
+      "https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=corn%20gray%20leaf%20spot%20disease%2C%20small%20oval%20gray%20lesions%20on%20corn%20leaves%2C%20brown%20border%2C%20maize%20disease&image_size=square",
+    name: "玉米灰斑病",
+    symptoms:
+      "叶片上出现椭圆形或长方形的灰色病斑，长2-5厘米，宽1-2厘米，边缘褐色，病斑中央灰色或浅褐色。病斑多先出现在下部叶片，逐渐向上蔓延，严重时病斑汇合导致叶片干枯死亡，影响光合作用和籽粒灌浆。",
+    occurrence:
+      "病菌以菌丝体在病残体上越冬，次年产生分生孢子，通过风雨传播。高温高湿条件下发病重，气温25-30℃、相对湿度80%以上时易暴发流行。连作田、种植密度过大的田块发病严重。",
+    control:
+      "种植抗病品种；实行轮作倒茬，避免连作；收获后及时清除病残体；合理密植，加强田间通风；发病初期及时喷药，可选用苯醚甲环唑、吡唑醚菌酯等药剂喷雾防治。",
   },
   {
     image:
-      "https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=wheat%20rust%20disease%2C%20orange%20rust%20spores%20on%20wheat%20leaves%2C%20cereal%20crop%20disease&image_size=square",
-    name: "小麦锈病",
-    description:
-      "包括条锈病、叶锈病和秆锈病三种。叶片和茎秆上出现铁锈色孢子堆，严重影响光合作用。",
+      "https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=potato%20late%20blight%20disease%20on%20potato%20leaves%2C%20dark%20green%20water-soaked%20lesions%2C%20white%20mold%20on%20underside%2C%20Phytophthora%20infestans&image_size=square",
+    name: "马铃薯晚疫病",
+    symptoms:
+      "叶片出现暗绿色水渍状病斑，边缘不明显，病斑迅速扩大。湿度大时，叶背产生白色霉层。茎秆和叶柄上出现褐色长条状病斑。块茎表面出现褐色或紫褐色不规则病斑，内部组织腐烂发臭，短时间内可导致全田毁灭。",
+    occurrence:
+      "病菌以菌丝体在种薯内或病残体中越冬，通过风雨传播。低温高湿是发病的关键条件，气温10-22℃、相对湿度95%以上时易发病。马铃薯开花期前后是发病高峰期，连绵阴雨会导致病害迅速蔓延。",
+    control:
+      "选用抗病品种和无病种薯；实行轮作，避免与茄科作物连作；加强田间排水，降低湿度；发病初期及时喷药，可选用甲霜灵锰锌、霜脲锰锌、氟啶胺等药剂，每隔7-10天喷一次。",
   },
   {
     image:
-      "https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=cucumber%20downy%20mildew%20disease%2C%20yellow%20angular%20spots%20on%20leaves%2C%20purple%20gray%20mold%2C%20vegetable%20disease&image_size=square",
-    name: "黄瓜霜霉病",
-    description:
-      "黄瓜最常见的叶部病害之一。叶片正面出现黄色多角形病斑，背面产生紫灰色霉层。",
+      "https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=pumpkin%20powdery%20mildew%20disease%2C%20white%20powdery%20fungal%20growth%20on%20pumpkin%20leaves%2C%20cucurbit%20disease&image_size=square",
+    name: "南瓜白粉病",
+    symptoms:
+      "叶片表面产生白色粉状物，逐渐蔓延至整个叶片。后期白粉变为灰白色，叶片变黄、干枯、脱落。叶柄和茎蔓也可受害，严重时整株早衰，影响结瓜。病害多从下部叶片开始，向上部蔓延。",
+    occurrence:
+      "病菌以闭囊壳在病残体上越冬，次年产生子囊孢子，通过气流传播。温暖干燥的气候条件易发病，气温20-25℃、相对湿度60%-80%时发病最重。植株生长衰弱、通风不良的田块发病严重。",
+    control:
+      "选用抗病品种；加强田间管理，合理密植，及时整枝打杈；发病初期及时喷药，可选用硫磺制剂、三唑酮、醚菌酯、戊唑醇等药剂喷雾防治，注意药剂交替使用。",
+  },
+  {
+    image:
+      "https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=tomato%20septoria%20leaf%20spot%20disease%2C%20small%20dark%20brown%20circular%20spots%20with%20yellow%20halo%20on%20tomato%20leaves&image_size=square",
+    name: "番茄斑枯病",
+    symptoms:
+      "叶片上出现圆形或近圆形的褐色小斑点，直径2-4毫米，边缘褐色，中央灰白色，病斑周围有黄色晕圈。病斑上产生黑色小颗粒。严重时叶片布满病斑，导致叶片干枯脱落。病害多在番茄结果期发生，下部叶片先发病。",
+    occurrence:
+      "病菌以分生孢子器在病残体上越冬，次年产生分生孢子，通过风雨传播。高温高湿条件下发病重，气温20-25℃、相对湿度85%以上时易发病。番茄结果期是发病高峰期，连作田、管理粗放的田块发病严重。",
+    control:
+      "选用抗病品种；实行轮作，避免与茄科作物连作；及时清除病叶，减少菌源；发病初期及时喷药，可选用代森锰锌、百菌清、苯醚甲环唑、嘧菌酯等药剂喷雾防治。",
+  },
+  {
+    image:
+      "https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=grape%20black%20rot%20disease%2C%20brown%20circular%20spots%20on%20grape%20leaves%2C%20black%20pycnidia%20dots%2C%20vine%20disease&image_size=square",
+    name: "葡萄黑腐病",
+    symptoms:
+      "叶片上出现圆形褐色病斑，直径2-5厘米，病斑中央有黑色小颗粒。果实受害后变为黑色僵果，表面布满黑色小颗粒。新梢和叶柄上出现褐色椭圆形病斑，严重时导致枝蔓枯死。",
+    occurrence:
+      "病菌以分生孢子器或子囊壳在病残体上越冬，次年产生孢子，通过风雨传播。高温高湿条件下发病重，气温24-28℃、相对湿度80%以上时易发病。葡萄开花后至果实成熟期是发病高峰期。",
+    control:
+      "选用抗病品种；冬季彻底清除病残体，集中烧毁；加强果园通风透光，合理修剪；发病初期及时喷药，可选用波尔多液、代森锰锌、苯醚甲环唑、嘧菌酯等药剂喷雾防治，重点保护幼果。",
   },
 ];
+
+const currentPage = ref(0);
+const itemsPerPage = 3;
+
+const totalPages = computed(() => {
+  return Math.ceil(diseaseInfo.length / itemsPerPage);
+});
+
+const visibleDiseases = computed(() => {
+  const start = currentPage.value * itemsPerPage;
+  return diseaseInfo.slice(start, start + itemsPerPage);
+});
+
+function goToPage(page) {
+  currentPage.value = page;
+}
+
+let carouselInterval = null;
+
+function startCarousel() {
+  carouselInterval = setInterval(() => {
+    currentPage.value = (currentPage.value + 1) % totalPages.value;
+  }, 5000);
+}
+
+function stopCarousel() {
+  if (carouselInterval) {
+    clearInterval(carouselInterval);
+    carouselInterval = null;
+  }
+}
+
+onMounted(() => {
+  startCarousel();
+});
+
+onUnmounted(() => {
+  stopCarousel();
+});
 </script>
 
 <style lang="scss" scoped>
@@ -451,8 +549,8 @@ const diseaseInfo = [
   max-width: 1400px;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 24px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 32px;
 }
 
 .disease-card {
@@ -470,7 +568,7 @@ const diseaseInfo = [
 
 .disease-image {
   width: 100%;
-  height: 180px;
+  height: 220px;
   object-fit: cover;
 }
 
@@ -491,37 +589,34 @@ const diseaseInfo = [
   line-height: 1.6;
 }
 
-.cta-section {
-  padding: 80px 40px;
-  background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
-  text-align: center;
+.disease-carousel-wrapper {
+  position: relative;
 }
 
-.cta-content h2 {
-  font-size: 36px;
-  font-weight: 700;
-  color: white;
-  margin-bottom: 16px;
+.carousel-indicators {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 32px;
 }
 
-.cta-content p {
-  font-size: 18px;
-  color: rgba(255, 255, 255, 0.8);
-  margin-bottom: 32px;
-}
+.indicator-btn {
+  width: 12px;
+  height: 12px;
+  border: none;
+  border-radius: 50%;
+  background: #d1d5db;
+  cursor: pointer;
+  transition: all 0.3s ease;
 
-.cta-btn {
-  text-decoration: none;
-  color: #166534;
-  font-weight: 600;
-  padding: 14px 40px;
-  background: white;
-  border-radius: 12px;
-  transition: all 0.2s ease;
+  &.active {
+    width: 32px;
+    border-radius: 6px;
+    background: #16a34a;
+  }
 
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+  &:hover:not(.active) {
+    background: #9ca3af;
   }
 }
 
