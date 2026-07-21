@@ -2,13 +2,13 @@
   <div class="analysis-page">
     <header class="analysis-header">
       <div class="header-left">
-        <router-link to="/" class="back-btn"> ← </router-link>
+        <router-link to="/home" class="back-btn"> ← </router-link>
 
         <div class="title-row">
           <div class="title-icon">🌿</div>
           <div>
-            <div class="title">Disease Analytics</div>
-            <div class="subtitle">Crop disease monitoring overview</div>
+            <div class="title">病害分析</div>
+            <div class="subtitle">作物病害监测概览</div>
           </div>
         </div>
       </div>
@@ -86,8 +86,8 @@
             <div class="section-title-row">
               <div class="section-icon">📈</div>
               <div>
-                <h2>Detection Trend</h2>
-                <p>Monthly detections vs identifications, 2026</p>
+                <h2>检测趋势</h2>
+                <p>每日检测次数统计</p>
               </div>
             </div>
           </div>
@@ -102,8 +102,8 @@
             <div class="section-title-row">
               <div class="section-icon">🏆</div>
               <div>
-                <h2>Top Diseases</h2>
-                <p>Ranked by detection volume</p>
+                <h2>高发病害排行</h2>
+                <p>按检测数量排序</p>
               </div>
             </div>
           </div>
@@ -118,12 +118,6 @@
               <div class="rank-content">
                 <div class="rank-row">
                   <span class="rank-name">{{ disease.name }}</span>
-                  <span
-                    class="rank-change"
-                    :class="disease.change > 0 ? 'positive' : 'negative'"
-                  >
-                    {{ disease.change > 0 ? "+" : "" }}{{ disease.change }}%
-                  </span>
                 </div>
                 <div class="progress-bar compact">
                   <div
@@ -135,7 +129,7 @@
                   />
                 </div>
                 <span class="rank-meta"
-                  >{{ disease.count.toLocaleString() }} cases</span
+                  >{{ disease.count.toLocaleString() }} 例</span
                 >
               </div>
             </div>
@@ -355,7 +349,7 @@ const lineOption = computed(() => ({
   },
   xAxis: {
     type: "category",
-    data: trendData.value.map((item) => item.month),
+    data: trendData.value.map((item) => item.date || item.month),
     axisLine: { show: false },
     axisTick: { show: false },
     axisLabel: {
@@ -377,7 +371,7 @@ const lineOption = computed(() => ({
   },
   series: [
     {
-      name: "Total Detections",
+      name: "检测次数",
       type: "line",
       smooth: true,
       lineStyle: {
@@ -391,19 +385,6 @@ const lineOption = computed(() => ({
         color: "rgba(22, 163, 74, 0.08)",
       },
       data: trendData.value.map((item) => item.detections),
-    },
-    {
-      name: "Identified",
-      type: "line",
-      smooth: true,
-      lineStyle: {
-        width: 3,
-        color: "#0ea5e9",
-      },
-      itemStyle: {
-        color: "#0ea5e9",
-      },
-      data: trendData.value.map((item) => item.identified),
     },
   ],
 }));

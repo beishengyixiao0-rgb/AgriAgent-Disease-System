@@ -6,10 +6,10 @@
       <div class="logo-section">
         <div class="logo-icon">🌿</div>
         <h1>AgriAgent</h1>
-        <p>AI-powered crop health monitoring</p>
+        <p>AI作物健康监测</p>
       </div>
 
-      <button class="back-btn" @click="goBack">← Back to Home</button>
+      <button class="back-btn" @click="goBack">← 返回首页</button>
 
       <div class="login-card">
         <div v-if="!showForgotPassword && !showResetPassword" class="tabs">
@@ -18,24 +18,24 @@
             :class="{ active: isLogin }"
             @click="isLogin = true"
           >
-            Login
+            登录
           </button>
           <button
             class="tab-btn"
             :class="{ active: !isLogin }"
             @click="isLogin = false"
           >
-            Sign Up
+            注册
           </button>
         </div>
 
         <div v-if="showForgotPassword" class="form-header">
-          <h3>Forgot Password</h3>
+          <h3>忘记密码</h3>
           <button class="close-btn" @click="closeForgotPassword">×</button>
         </div>
 
         <div v-if="showResetPassword" class="form-header">
-          <h3>Reset Password</h3>
+          <h3>重置密码</h3>
           <button class="close-btn" @click="closeResetPassword">×</button>
         </div>
 
@@ -45,25 +45,25 @@
           class="login-form"
         >
           <div class="form-group">
-            <label>Username</label>
+            <label>用户名</label>
             <div class="input-wrapper">
               <span class="input-icon">👤</span>
               <input
                 v-model="loginForm.username"
                 type="text"
-                placeholder="Enter your username"
+                placeholder="请输入用户名"
               />
             </div>
           </div>
 
           <div class="form-group">
-            <label>Password</label>
+            <label>密码</label>
             <div class="input-wrapper">
               <span class="input-icon">🔒</span>
               <input
                 v-model="loginForm.password"
                 type="password"
-                placeholder="Enter your password"
+                placeholder="请输入密码"
                 @keyup.enter="handleLogin"
               />
             </div>
@@ -75,12 +75,12 @@
               class="forgot-btn"
               @click="showForgotPassword = true"
             >
-              Forgot Password?
+              忘记密码？
             </button>
           </div>
 
           <button type="submit" class="submit-btn" :disabled="loading">
-            {{ loading ? "Signing In..." : "Sign In" }}
+            {{ loading ? "登录中..." : "登录" }}
           </button>
         </form>
 
@@ -90,28 +90,27 @@
           class="login-form"
         >
           <div class="form-group">
-            <label>Email</label>
+            <label>邮箱</label>
             <div class="input-wrapper">
               <span class="input-icon">📧</span>
               <input
                 v-model="forgotForm.email"
                 type="email"
-                placeholder="Enter your registered email"
+                placeholder="请输入注册过的邮箱"
                 @keyup.enter="handleForgotPassword"
               />
             </div>
           </div>
 
           <div v-if="forgotSuccess" class="success-message">
-            ✅ Reset token generated. Please copy the token below and proceed to
-            reset your password.
+            ✅ 重置令牌已生成，请复制下方令牌并继续重置密码。
           </div>
 
           <div v-if="forgotSuccess" class="token-display">
-            <label>Reset Token:</label>
+            <label>重置令牌：</label>
             <div class="token-content">
               {{ resetToken }}
-              <button class="copy-btn" @click="copyToken">📋 Copy</button>
+              <button class="copy-btn" @click="copyToken">📋 复制</button>
             </div>
           </div>
 
@@ -121,11 +120,11 @@
             class="submit-btn"
             @click="showResetPassword = true"
           >
-            Reset Password
+            重置密码
           </button>
 
           <button v-else type="submit" class="submit-btn" :disabled="loading">
-            {{ loading ? "Generating..." : "Get Reset Token" }}
+            {{ loading ? "生成中..." : "获取重置令牌" }}
           </button>
         </form>
 
@@ -135,44 +134,44 @@
           class="login-form"
         >
           <div class="form-group">
-            <label>Reset Token</label>
+            <label>重置令牌</label>
             <div class="input-wrapper">
               <span class="input-icon">🔑</span>
               <input
                 v-model="resetForm.token"
                 type="text"
-                placeholder="Enter your reset token"
+                placeholder="请输入重置令牌"
               />
             </div>
           </div>
 
           <div class="form-group">
-            <label>New Password</label>
+            <label>新密码</label>
             <div class="input-wrapper">
               <span class="input-icon">🔒</span>
               <input
                 v-model="resetForm.newPassword"
                 type="password"
-                placeholder="Enter new password"
+                placeholder="请输入新密码"
               />
             </div>
           </div>
 
           <div class="form-group">
-            <label>Confirm New Password</label>
+            <label>确认新密码</label>
             <div class="input-wrapper">
               <span class="input-icon">🔒</span>
               <input
                 v-model="resetForm.confirmPassword"
                 type="password"
-                placeholder="Confirm new password"
+                placeholder="请确认新密码"
                 @keyup.enter="handleResetPassword"
               />
             </div>
           </div>
 
           <button type="submit" class="submit-btn" :disabled="loading">
-            {{ loading ? "Resetting..." : "Reset Password" }}
+            {{ loading ? "重置中..." : "重置密码" }}
           </button>
         </form>
 
@@ -182,56 +181,56 @@
           class="login-form"
         >
           <div class="form-group">
-            <label>Username</label>
+            <label>用户名</label>
             <div class="input-wrapper">
               <span class="input-icon">👤</span>
               <input
                 v-model="registerForm.username"
                 type="text"
-                placeholder="Enter your username"
+                placeholder="请输入用户名"
               />
             </div>
           </div>
 
           <div class="form-group">
-            <label>Email</label>
+            <label>邮箱</label>
             <div class="input-wrapper">
               <span class="input-icon">📧</span>
               <input
                 v-model="registerForm.email"
                 type="email"
-                placeholder="Enter your email"
+                placeholder="请输入邮箱"
               />
             </div>
           </div>
 
           <div class="form-group">
-            <label>Password</label>
+            <label>密码</label>
             <div class="input-wrapper">
               <span class="input-icon">🔒</span>
               <input
                 v-model="registerForm.password"
                 type="password"
-                placeholder="Enter your password"
+                placeholder="请输入密码"
               />
             </div>
           </div>
 
           <div class="form-group">
-            <label>Confirm Password</label>
+            <label>确认密码</label>
             <div class="input-wrapper">
               <span class="input-icon">🔒</span>
               <input
                 v-model="registerForm.confirmPassword"
                 type="password"
-                placeholder="Confirm your password"
+                placeholder="请确认密码"
                 @keyup.enter="handleRegister"
               />
             </div>
           </div>
 
           <button type="submit" class="submit-btn" :disabled="loading">
-            {{ loading ? "Signing Up..." : "Sign Up" }}
+            {{ loading ? "注册中..." : "注册" }}
           </button>
         </form>
       </div>

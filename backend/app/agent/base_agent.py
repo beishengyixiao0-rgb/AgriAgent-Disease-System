@@ -51,27 +51,35 @@ def create_llm():
         base_url = getattr(settings, "OPENAI_BASE_URL", "https://api.openai.com/v1")
         model_name = getattr(settings, "OPENAI_MODEL", "gpt-4o-mini")
 
-    from langchain_openai import ChatOpenAI
+    if not api_key or api_key in ("sk-your-qwen-api-key", "sk-your-openai-api-key"):
+        logger.warning("未配置有效的 API key，LLM 服务不可用")
+        return None
 
-    proxy = getattr(settings, "QWEN_PROXY", "").strip() or None
-    http_client = httpx.Client(
-        proxy=proxy,
-        timeout=httpx.Timeout(60.0, connect=15.0),
-        trust_env=False,
-    )
-    http_async_client = httpx.AsyncClient(
-        proxy=proxy,
-        timeout=httpx.Timeout(60.0, connect=15.0),
-        trust_env=False,
-    )
-    return ChatOpenAI(
-        model=model_name,
-        openai_api_key=api_key,
-        openai_api_base=base_url,
-        temperature=0.1,
-        http_client=http_client,
-        http_async_client=http_async_client,
-    )
+    try:
+        from langchain_openai import ChatOpenAI
+
+        proxy = getattr(settings, "QWEN_PROXY", "").strip() or None
+        http_client = httpx.Client(
+            proxy=proxy,
+            timeout=httpx.Timeout(60.0, connect=15.0),
+            trust_env=False,
+        )
+        http_async_client = httpx.AsyncClient(
+            proxy=proxy,
+            timeout=httpx.Timeout(60.0, connect=15.0),
+            trust_env=False,
+        )
+        return ChatOpenAI(
+            model=model_name,
+            openai_api_key=api_key,
+            openai_api_base=base_url,
+            temperature=0.1,
+            http_client=http_client,
+            http_async_client=http_async_client,
+        )
+    except Exception as e:
+        logger.error("创建 LLM 实例失败: %s", str(e))
+        return None
 
 
 class BaseAgent:
@@ -109,7 +117,9 @@ class BaseAgent:
                 return_intermediate_steps=True,
             )
         except Exception as e:
-            logger.error("[%s] Agent 创建失败，降级为无 LLM 模式: %s", self.AGENT_NAME, e)
+            logger.error(
+                "[%s] Agent 创建失败，降级为无 LLM 模式: %s", self.AGENT_NAME, e
+            )
             self.executor = None
 
         self.agent_logger.info(
@@ -281,9 +291,15 @@ class BaseAgent:
                 ),
             )
 
-        _tool_user_id: contextvars.ContextVar = contextvars.ContextVar("base_user_id", default=None)
-        _tool_scene_id: contextvars.ContextVar = contextvars.ContextVar("base_scene_id", default=None)
-        _tool_lang: contextvars.ContextVar = contextvars.ContextVar("base_lang", default="zh")
+        _tool_user_id: contextvars.ContextVar = contextvars.ContextVar(
+            "base_user_id", default=None
+        )
+        _tool_scene_id: contextvars.ContextVar = contextvars.ContextVar(
+            "base_scene_id", default=None
+        )
+        _tool_lang: contextvars.ContextVar = contextvars.ContextVar(
+            "base_lang", default="zh"
+        )
 
         user_token = _tool_user_id.set(user_id)
         scene_token = _tool_scene_id.set(scene_id)
@@ -291,7 +307,9 @@ class BaseAgent:
 
         extra_tokens = None
         if extra_context_setup:
-            extra_tokens = extra_context_setup(user_id, scene_id, display_language, is_admin)
+            extra_tokens = extra_context_setup(
+                user_id, scene_id, display_language, is_admin
+            )
 
         assistant_parts: list[str] = []
         tool_calls: list[dict] = []
@@ -306,7 +324,12 @@ class BaseAgent:
 
         try:
             if self.executor is None:
-                yield {"type": "error", "content": "AI 服务暂时不可用，请稍后重试。" if display_language == "zh" else "AI service temporarily unavailable."}
+                yield {
+                    "type": "error",
+                    "content": "AI 服务暂时不可用，请稍后重试。"
+                    if display_language == "zh"
+                    else "AI service temporarily unavailable.",
+                }
                 return
 
             async for event in self.executor.astream_events(
