@@ -140,8 +140,6 @@ def detect_zip_images_file(
         return json.dumps(result, ensure_ascii=False)
     except Exception as e:
         logger.error("ZIP 检测失败: %s", str(e))
-        result.pop("annotated_image_base64", None)
-        result.pop("detections", None)
         return json.dumps({"error": f"ZIP 检测失败: {str(e)}"}, ensure_ascii=False)
 
 
