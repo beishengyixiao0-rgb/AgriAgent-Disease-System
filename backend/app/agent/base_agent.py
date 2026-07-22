@@ -13,6 +13,7 @@
 
 import contextvars
 import json
+import re
 from pathlib import Path
 from typing import AsyncGenerator
 
@@ -29,6 +30,10 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 logger = get_logger(__name__)
 
 VIDEO_SUFFIXES = {".mp4", ".avi", ".mov", ".mkv", ".wmv", ".flv"}
+FAKE_TOOL_CALL_PATTERN = re.compile(
+    r"^\s*(?:call|tool_call|function_call)?\s*`{0,3}\s*\{[^{}]*(?:\"name\"|'name')[^{}]*(?:\"arguments\"|'arguments')",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 def _is_video_path(path: str) -> bool:
@@ -126,31 +131,47 @@ class BaseAgent:
         message: str,
         image_path: str | None = None,
         image_paths: list[str] | None = None,
+        display_language: str = "zh",
     ) -> tuple[str, list[str]]:
         attachment_paths = image_paths or ([image_path] if image_path else [])
         if len(attachment_paths) == 1:
-            label = "视频" if _is_video_path(attachment_paths[0]) else "图片"
+            is_video = _is_video_path(attachment_paths[0])
+            if display_language == "en":
+                label = "video" if is_video else "image"
+                return (
+                    f"{message}\n[attachment {label} path: {attachment_paths[0]}]",
+                    attachment_paths,
+                )
+            label = "视频" if is_video else "图片"
             return (
                 f"{message}\n[附件{label}路径: {attachment_paths[0]}]",
                 attachment_paths,
             )
         if attachment_paths:
             paths_json = json.dumps(attachment_paths, ensure_ascii=False)
-            label = (
-                "视频"
-                if all(_is_video_path(path) for path in attachment_paths)
-                else "图片"
-            )
+            all_video = all(_is_video_path(path) for path in attachment_paths)
+            if display_language == "en":
+                label = "video" if all_video else "image"
+                return f"{message}\n[attachment {label} path list: {paths_json}]", attachment_paths
+            label = "视频" if all_video else "图片"
             return f"{message}\n[附件{label}路径列表: {paths_json}]", attachment_paths
         return message, attachment_paths
 
     @staticmethod
-    def _message_for_history(message: str, attachment_paths: list[str]) -> str:
+    def _message_for_history(
+        message: str, attachment_paths: list[str], display_language: str = "zh"
+    ) -> str:
         if not attachment_paths:
             return message
         if len(attachment_paths) == 1:
-            attachment_label = "视频" if _is_video_path(attachment_paths[0]) else "图片"
+            is_video = _is_video_path(attachment_paths[0])
+            if display_language == "en":
+                attachment_label = "video" if is_video else "image"
+                return f"{message}\n[{attachment_label} attachment uploaded in this turn]"
+            attachment_label = "视频" if is_video else "图片"
             return f"{message}\n[本轮已上传{attachment_label}附件]"
+        if display_language == "en":
+            return f"{message}\n[{len(attachment_paths)} image attachments uploaded in this turn]"
         return f"{message}\n[本轮已上传 {len(attachment_paths)} 个图片附件]"
 
     @staticmethod
@@ -174,6 +195,20 @@ class BaseAgent:
         if isinstance(content, str):
             return content
         return str(tool_output) if tool_output is not None else ""
+
+    @staticmethod
+    def _sanitize_model_text(content: str, display_language: str) -> str:
+        """禁止模型把伪工具调用 JSON 当普通正文输出。"""
+        if not content:
+            return content
+        if not FAKE_TOOL_CALL_PATTERN.search(content):
+            return content
+        return (
+            "The model attempted to emit an unregistered tool call, so the response was blocked. "
+            "Please try again, or ask for a supported action such as detection history, statistics, or knowledge-base Q&A."
+            if display_language == "en"
+            else "模型尝试输出未注册的工具调用，已被系统拦截。请重试，或改问系统支持的检测历史、统计、知识库问答等功能。"
+        )
 
     @staticmethod
     def _compact_tool_results(tool_results: list[str]) -> str | None:
@@ -207,6 +242,41 @@ class BaseAgent:
             json.dumps(fallback_results[-1], ensure_ascii=False)
             if fallback_results
             else None
+        )
+
+    @staticmethod
+    def _knowledge_status_text(
+        tool_name: str, serialized_output: str, display_language: str
+    ) -> str | None:
+        """把知识库检索结果转成用户可见的命中状态提示。"""
+        if tool_name != "search_knowledge":
+            return None
+        try:
+            data = json.loads(serialized_output)
+        except (TypeError, json.JSONDecodeError):
+            return None
+        if not isinstance(data, dict):
+            return None
+
+        if data.get("error"):
+            return (
+                f"Knowledge retrieval failed: {data['error']}\n\n"
+                if display_language == "en"
+                else f"知识库检索失败：{data['error']}\n\n"
+            )
+
+        fallback = bool(data.get("fallback_to_llm"))
+        count = int(data.get("count") or len(data.get("knowledge") or []))
+        if fallback or count <= 0:
+            return (
+                "Knowledge base not hit; answering with general model knowledge.\n\n"
+                if display_language == "en"
+                else "未命中知识库，以下回答将基于通用模型知识。\n\n"
+            )
+        return (
+            f"Knowledge base hit: {count} relevant fragment(s).\n\n"
+            if display_language == "en"
+            else f"已命中知识库：{count} 条相关片段。\n\n"
         )
 
     @staticmethod
@@ -253,13 +323,13 @@ class BaseAgent:
         """
         original_message = message
         message, attachment_paths = self._attachment_message(
-            original_message, image_path, image_paths
+            original_message, image_path, image_paths, display_language
         )
         if display_language == "en":
             message += "\n[System instruction: Respond in English.]"
 
         persisted_user_message = self._message_for_history(
-            original_message, attachment_paths
+            original_message, attachment_paths, display_language
         )
         chat_history = []
         if user_id is not None and session_id:
@@ -348,6 +418,12 @@ class BaseAgent:
                         "tool": tool_name,
                         "result": serialized_output,
                     }
+                    knowledge_status = self._knowledge_status_text(
+                        tool_name, serialized_output, display_language
+                    )
+                    if knowledge_status:
+                        assistant_parts.append(knowledge_status)
+                        yield {"type": "text_chunk", "content": knowledge_status}
 
         except Exception as e:
             self.agent_logger.error("Agent 流式执行异常: %s", str(e), exc_info=True)

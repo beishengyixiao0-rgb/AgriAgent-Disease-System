@@ -349,8 +349,8 @@ class DetectionService:
     def detect_single(
         self,
         image_path: str,
-        conf: float = 0.25,
-        iou: float = 0.45,
+        conf: float = DetectionConfig.conf_threshold,
+        iou: float = DetectionConfig.iou_threshold,
         scene_id: int = None,
         user_id: int = None,
         display_language: str = "zh",
@@ -476,8 +476,8 @@ class DetectionService:
     def detect_batch(
         self,
         image_paths: list[str],
-        conf: float = 0.25,
-        iou: float = 0.45,
+        conf: float = DetectionConfig.conf_threshold,
+        iou: float = DetectionConfig.iou_threshold,
         scene_id: int = None,
         user_id: int = None,
         display_language: str = "zh",
@@ -623,8 +623,8 @@ class DetectionService:
     def detect_zip(
         self,
         zip_path: str,
-        conf: float = 0.25,
-        iou: float = 0.45,
+        conf: float = DetectionConfig.conf_threshold,
+        iou: float = DetectionConfig.iou_threshold,
         scene_id: int = None,
         user_id: int = None,
         display_language: str = "zh",
@@ -699,8 +699,8 @@ class DetectionService:
     def detect_video(
         self,
         video_path: str,
-        conf: float = 0.25,
-        iou: float = 0.45,
+        conf: float = DetectionConfig.conf_threshold,
+        iou: float = DetectionConfig.iou_threshold,
         frame_sample_rate: int = 5,
         max_frames: int = 50,
         scene_id: int = None,

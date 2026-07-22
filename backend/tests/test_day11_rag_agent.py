@@ -1,17 +1,28 @@
 """Day11 RAG 知识库与单 Agent 多工具的无外部依赖回归测试。"""
 
-from types import SimpleNamespace
 import asyncio
+import os
+from datetime import datetime
+from types import SimpleNamespace
+from unittest.mock import patch
 
+from app.agent.base_agent import BaseAgent
 from app.agent.detection_agent import ALL_TOOLS, detection_agent
 from app.agent.prompts import get_detection_agent_prompt
-from app.agent.tools.analysis_tool import query_user_list, reset_tool_context, set_tool_context
+from app.agent.tools.analysis_tool import (
+    query_user_list,
+    reset_tool_context,
+    set_tool_context,
+)
 from app.rag import embedding as embedding_module
 from app.rag import retriever as retriever_module
 from app.vectorstore.pgvector_client import (
     INSERT_EMBEDDINGS_SQL,
     SEARCH_EMBEDDINGS_SQL,
 )
+
+# 从 conftest 导入测试数据库相关
+from tests.conftest import TestSessionLocal
 
 
 def test_agent_binds_eight_tools_and_uses_language_prompt():
@@ -31,6 +42,23 @@ def test_agent_binds_eight_tools_and_uses_language_prompt():
     }
     assert "来源文件（相似度）" in get_detection_agent_prompt("zh")
     assert "fallback_to_llm" in get_detection_agent_prompt("en")
+
+
+def test_english_attachment_context_does_not_leak_chinese():
+    """英文模式下传给模型和历史的附件上下文不能混入中文。"""
+    message, paths = detection_agent._attachment_message(
+        "detect this image",
+        image_path="/tmp/rsod_uploads/leaf.jpg",
+        display_language="en",
+    )
+    history_message = detection_agent._message_for_history(
+        "detect this image", paths, display_language="en"
+    )
+
+    assert "[attachment image path:" in message
+    assert "[image attachment uploaded in this turn]" in history_message
+    assert "附件" not in message
+    assert "本轮" not in history_message
 
 
 def test_non_admin_cannot_query_user_list():
@@ -55,7 +83,11 @@ def test_retriever_filters_low_similarity_without_external_calls(monkeypatch):
         retriever_module.pgvector_client,
         "search",
         lambda embedding, top_k, filter_metadata=None: [
-            {"content": "无关内容", "metadata": {"source": "test.md"}, "similarity": 0.2}
+            {
+                "content": "无关内容",
+                "metadata": {"source": "test.md"},
+                "similarity": 0.2,
+            }
         ],
     )
 
@@ -92,7 +124,9 @@ def test_index_document_returns_document_chunk_count(monkeypatch):
     monkeypatch.setattr(
         retriever_module.document_loader,
         "load_single_document",
-        lambda file_path, title: [{"content": "知识库内容", "metadata": {"source": "a.md"}}],
+        lambda file_path, title: [
+            {"content": "知识库内容", "metadata": {"source": "a.md"}}
+        ],
     )
     monkeypatch.setattr(
         retriever_module.document_loader,
@@ -112,7 +146,9 @@ def test_index_document_returns_document_chunk_count(monkeypatch):
         inserted["metadatas"] = metadatas
         return True
 
-    monkeypatch.setattr(retriever_module.pgvector_client, "insert_embeddings", fake_insert_embeddings)
+    monkeypatch.setattr(
+        retriever_module.pgvector_client, "insert_embeddings", fake_insert_embeddings
+    )
 
     assert retriever.index_document(7, "knowledge/documents/a.md", "测试文档") == 2
     assert inserted["metadatas"][0]["document_id"] == 7
@@ -121,6 +157,7 @@ def test_index_document_returns_document_chunk_count(monkeypatch):
 
 def test_embedding_rejects_non_1024_dimension(monkeypatch):
     """Embedding 服务必须拒绝非 1024 维响应，避免写入错误向量表。"""
+
     class FakeClient:
         def __init__(self):
             self.embeddings = self
@@ -129,7 +166,9 @@ def test_embedding_rejects_non_1024_dimension(monkeypatch):
             return SimpleNamespace(data=[SimpleNamespace(embedding=[0.0, 0.1])])
 
     monkeypatch.setattr(embedding_module.embedding_service, "_client", FakeClient())
-    monkeypatch.setattr(embedding_module.embedding_service, "_model", "text-embedding-v3")
+    monkeypatch.setattr(
+        embedding_module.embedding_service, "_model", "text-embedding-v3"
+    )
 
     assert embedding_module.embedding_service.embed_texts(["测试文本"]) == [[]]
 
@@ -149,7 +188,9 @@ def test_embedding_uses_1024_dimensions_and_batches_at_ten(monkeypatch):
             )
 
     monkeypatch.setattr(embedding_module.embedding_service, "_client", FakeClient())
-    monkeypatch.setattr(embedding_module.embedding_service, "_model", "text-embedding-v3")
+    monkeypatch.setattr(
+        embedding_module.embedding_service, "_model", "text-embedding-v3"
+    )
 
     embeddings = embedding_module.embedding_service.embed_texts(
         [f"测试文本 {index}" for index in range(25)]
@@ -178,6 +219,23 @@ def test_embedding_search_sql_binds_query_and_limit():
     assert set(text(SEARCH_EMBEDDINGS_SQL)._bindparams) == {"query", "top_k"}
 
 
+def test_knowledge_tool_status_text_reports_hit_and_miss():
+    """知识库工具结果应转成用户可见的命中状态。"""
+    hit_text = BaseAgent._knowledge_status_text(
+        "search_knowledge",
+        '{"knowledge":[{"content":"a"}],"count":1,"fallback_to_llm":false}',
+        "zh",
+    )
+    miss_text = BaseAgent._knowledge_status_text(
+        "search_knowledge",
+        '{"knowledge":[],"fallback_to_llm":true}',
+        "zh",
+    )
+
+    assert "已命中知识库" in hit_text
+    assert "未命中知识库" in miss_text
+
+
 def test_knowledge_build_requires_admin(client, user_headers):
     """全量重建索引属于管理员操作，普通用户不能触发。"""
     response = client.post("/api/knowledge/build", headers=user_headers)
@@ -188,27 +246,30 @@ def test_knowledge_build_requires_admin(client, user_headers):
 def test_knowledge_build_failure_returns_503(client, admin_headers, monkeypatch):
     """管理员发起建库失败时必须返回真实 HTTP 错误。"""
     from app.api import knowledge
-    from tests.conftest import TestSessionLocal
 
     monkeypatch.setattr(knowledge, "SessionLocal", TestSessionLocal)
     monkeypatch.setattr(
         knowledge.knowledge_retriever,
         "rebuild_approved_documents",
-        lambda db, force_rebuild=False: {"success": False, "total_chunks": 0, "index_built": False},
+        lambda db, force_rebuild=False: {
+            "success": False,
+            "total_chunks": 0,
+            "index_built": False,
+        },
     )
 
     response = client.post("/api/knowledge/build", headers=admin_headers)
 
     assert response.status_code == 503
-    # 项目全局异常处理器将 HTTPException.detail 放入统一的 message 字段。
     assert response.json()["message"]["message"] == "知识库索引构建失败"
 
 
-def test_batch_upload_documents_writes_minio_object_names(client, user_headers, monkeypatch):
+def test_batch_upload_documents_writes_minio_object_names(
+    client, user_headers, monkeypatch
+):
     """批量上传应逐个写入 MinIO，并在 file_path 中保存 object_name。"""
     from app.api import knowledge
     from app.entity.db_models import KnowledgeDocument
-    from tests.conftest import TestSessionLocal
 
     uploaded = {}
 
@@ -256,10 +317,8 @@ def test_chat_stream_passes_admin_flag(client, user_headers, monkeypatch):
     """聊天 API 必须把当前用户管理员身份传给多 Agent 入口。"""
     from app.api import chat as chat_api
     from app.services import chat_history_service as chat_history_module
-    from tests.conftest import TestSessionLocal
 
     captured = {}
-    # 聊天历史服务使用独立 SessionLocal，测试中必须切换到 conftest 的 SQLite。
     monkeypatch.setattr(chat_history_module, "SessionLocal", TestSessionLocal)
 
     async def fake_chat_stream(**kwargs):
@@ -291,7 +350,9 @@ def test_multi_agent_routes_attachment_directly_to_detection(monkeypatch):
         yield {"type": "text_chunk", "content": "检测完成"}
 
     monkeypatch.setattr(multi_agent_module, "supervisor_route", fail_supervisor)
-    monkeypatch.setattr(multi_agent_module.detection_agent, "chat_stream", fake_detection_stream)
+    monkeypatch.setattr(
+        multi_agent_module.detection_agent, "chat_stream", fake_detection_stream
+    )
 
     async def collect_events():
         return [
@@ -324,7 +385,9 @@ def test_multi_agent_routes_analysis_keywords_without_supervisor(monkeypatch):
         yield {"type": "text_chunk", "content": "分析完成"}
 
     monkeypatch.setattr(multi_agent_module, "supervisor_route", fail_supervisor)
-    monkeypatch.setattr(multi_agent_module.analysis_agent, "chat_stream", fake_analysis_stream)
+    monkeypatch.setattr(
+        multi_agent_module.analysis_agent, "chat_stream", fake_analysis_stream
+    )
 
     async def collect_for(message):
         return [
@@ -339,7 +402,86 @@ def test_multi_agent_routes_analysis_keywords_without_supervisor(monkeypatch):
 
     assert asyncio.run(collect_for("我检测了多少次")) == [{"type": "text_chunk", "content": "分析完成"}]
     assert asyncio.run(collect_for("给出用户列表")) == [{"type": "text_chunk", "content": "分析完成"}]
-    assert captured == ["我检测了多少次", "给出用户列表"]
+    assert asyncio.run(collect_for("最近的检测结果")) == [{"type": "text_chunk", "content": "分析完成"}]
+    assert captured == ["我检测了多少次", "给出用户列表", "最近的检测结果"]
+
+
+def test_analysis_agent_directly_calls_history_tool_for_recent_results(monkeypatch):
+    """最近检测结果这类确定性请求应直接调用真实历史工具名。"""
+    import importlib
+
+    analysis_agent_module = importlib.import_module("app.agent.analysis_agent")
+
+    monkeypatch.setattr(
+        analysis_agent_module,
+        "query_detection_history",
+        SimpleNamespace(
+            invoke=lambda _args: (
+                '{"history":[{"id":1,"task_type":"single","status":"completed",'
+                '"total_images":1,"total_objects":2,"created_at":"2026-07-20T15:00:00"}],'
+                '"count":1}'
+            )
+        ),
+    )
+
+    async def collect_events():
+        return [
+            event
+            async for event in analysis_agent_module.analysis_agent.chat_stream(
+                message="最近的检测结果",
+                user_id=None,
+                session_id=None,
+                display_language="zh",
+            )
+        ]
+
+    events = asyncio.run(collect_events())
+
+    assert {
+        "type": "tool_call",
+        "tool": "query_detection_history",
+        "input": {"limit": 5},
+    } in events
+    assert not any(
+        event.get("tool") == "get_recent_detections"
+        for event in events
+        if isinstance(event, dict)
+    )
+    assert any(
+        event.get("type") == "text_chunk" and "任务 #1" in event.get("content", "")
+        for event in events
+    )
+
+
+def test_multi_agent_routes_knowledge_keywords_without_supervisor(monkeypatch):
+    """IoU、mAP、YOLO 等专业问题应直接进入知识问答 Agent。"""
+    from app.agent import multi_agent as multi_agent_module
+
+    captured = []
+
+    async def fail_supervisor(*_args, **_kwargs):
+        raise AssertionError("knowledge keyword requests should skip supervisor")
+
+    async def fake_qa_stream(**kwargs):
+        captured.append(kwargs["message"])
+        yield {"type": "text_chunk", "content": "知识回答"}
+
+    monkeypatch.setattr(multi_agent_module, "supervisor_route", fail_supervisor)
+    monkeypatch.setattr(multi_agent_module.qa_agent, "chat_stream", fake_qa_stream)
+
+    async def collect_for(message):
+        return [
+            event
+            async for event in multi_agent_module.multi_agent_chat_stream(
+                message=message,
+                user_id=1,
+                session_id="session_1",
+            )
+        ]
+
+    assert asyncio.run(collect_for("什么是IoU")) == [{"type": "text_chunk", "content": "知识回答"}]
+    assert asyncio.run(collect_for("YOLO 的 NMS 是什么")) == [{"type": "text_chunk", "content": "知识回答"}]
+    assert captured == ["什么是IoU", "YOLO 的 NMS 是什么"]
 
 
 def test_chat_stream_passes_superuser_as_admin(client, db_session, monkeypatch):
@@ -348,7 +490,6 @@ def test_chat_stream_passes_superuser_as_admin(client, db_session, monkeypatch):
     from app.core.security import create_access_token
     from app.services import chat_history_service as chat_history_module
     from app.services.user_service import user_service
-    from tests.conftest import TestSessionLocal
 
     user_service.ensure_builtin_roles(db_session)
     user = user_service.register(
@@ -371,9 +512,134 @@ def test_chat_stream_passes_superuser_as_admin(client, db_session, monkeypatch):
     monkeypatch.setattr(chat_api, "multi_agent_chat_stream", fake_chat_stream)
     response = client.post(
         "/api/chat/stream",
-        headers={"Authorization": f"Bearer {create_access_token({'sub': str(user.id)})}"},
+        headers={
+            "Authorization": f"Bearer {create_access_token({'sub': str(user.id)})}"
+        },
         json={"message": "给出用户列表"},
     )
 
     assert response.status_code == 200
     assert captured["is_admin"] is True
+
+
+# ==================== 知识库文档审核流程测试 ====================
+
+
+class TestKnowledgeDocumentWorkflow:
+    """知识库文档审核流程测试（仅保留不依赖上传文档的用例）"""
+
+    def test_user_upload_invalid_file_type(self, client, user_headers):
+        """测试上传不支持的文件类型 - 应返回 400"""
+        files = {"file": ("test.exe", b"fake exe content", "application/octet-stream")}
+
+        response = client.post(
+            "/api/knowledge/documents", headers=user_headers, files=files
+        )
+
+        assert response.status_code == 400
+        assert "不支持的文件类型" in response.text
+
+    def test_user_search_knowledge(self, client, user_headers):
+        """测试普通用户检索知识库 - 仅返回已审核文档"""
+        response = client.post(
+            "/api/knowledge/search",
+            headers=user_headers,
+            json={"query": "番茄病害", "top_k": 3},
+        )
+        assert response.status_code == 200
+        result = response.json()
+        assert result["query"] == "番茄病害"
+        assert "results" in result
+
+    def test_admin_view_all_documents(self, client, admin_headers):
+        """测试管理员查看全部文档列表"""
+        response = client.get("/api/knowledge/admin/documents", headers=admin_headers)
+
+        assert response.status_code == 200
+        result = response.json()
+        assert "total" in result
+        assert "items" in result
+
+    def test_admin_view_all_documents_with_status_filter(self, client, admin_headers):
+        """测试管理员按状态筛选文档列表"""
+        response = client.get(
+            "/api/knowledge/admin/documents?status=pending", headers=admin_headers
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        for item in result["items"]:
+            assert item["status"] == "pending"
+
+    def test_admin_view_pending_queue(self, client, admin_headers):
+        """测试管理员查看待审核队列"""
+        response = client.get("/api/knowledge/admin/pending", headers=admin_headers)
+
+        assert response.status_code == 200
+        result = response.json()
+        for item in result["items"]:
+            assert item["status"] == "pending"
+
+    def test_regular_user_cannot_access_admin_documents(self, client, user_headers):
+        """测试普通用户无法访问管理员接口 - /admin/documents"""
+        response = client.get("/api/knowledge/admin/documents", headers=user_headers)
+        assert response.status_code == 403
+
+    def test_regular_user_cannot_access_admin_pending(self, client, user_headers):
+        """测试普通用户无法访问管理员接口 - /admin/pending"""
+        response = client.get("/api/knowledge/admin/pending", headers=user_headers)
+        assert response.status_code == 403
+
+    def test_regular_user_cannot_reject_document(self, client, user_headers):
+        """测试普通用户无法驳回文档"""
+        response = client.put(
+            "/api/knowledge/admin/999/reject?review_comment=测试驳回",
+            headers=user_headers,
+        )
+        assert response.status_code == 403
+
+    def test_regular_user_cannot_delete_document(self, client, user_headers):
+        """测试普通用户无法删除文档"""
+        response = client.delete("/api/knowledge/admin/999", headers=user_headers)
+        assert response.status_code == 403
+
+    def test_regular_user_cannot_reindex_document(self, client, user_headers):
+        """测试普通用户无法重新索引文档"""
+        response = client.post("/api/knowledge/admin/999/reindex", headers=user_headers)
+        assert response.status_code == 403
+
+    def test_approve_nonexistent_document(self, client, admin_headers):
+        """测试审核不存在的文档 - 返回 404"""
+        response = client.put(
+            "/api/knowledge/admin/99999/approve", headers=admin_headers
+        )
+        assert response.status_code == 404
+
+    def test_delete_nonexistent_document(self, client, admin_headers):
+        """测试删除不存在的文档 - 返回 404"""
+        response = client.delete("/api/knowledge/admin/99999", headers=admin_headers)
+        assert response.status_code == 404
+
+    def test_search_with_empty_query(self, client, user_headers):
+        """测试空查询词"""
+        response = client.post(
+            "/api/knowledge/search",
+            headers=user_headers,
+            json={"query": "", "top_k": 3},
+        )
+        assert response.status_code in [200, 400]
+        if response.status_code == 200:
+            assert "results" in response.json()
+
+    def test_upload_document_without_authentication(self, client):
+        """测试未登录上传文档 - 返回 401"""
+        files = {"file": ("test.md", b"test content", "text/markdown")}
+        response = client.post("/api/knowledge/documents", files=files)
+        assert response.status_code == 401
+
+    def test_search_without_authentication(self, client):
+        """测试未登录检索 - 返回 401"""
+        response = client.post(
+            "/api/knowledge/search", json={"query": "test", "top_k": 3}
+        )
+        assert response.status_code == 401

@@ -4,6 +4,7 @@ MinIO 对象存储客户端封装
 """
 
 import io
+from urllib.parse import urlparse
 
 from app.config.settings import settings
 from minio import Minio
@@ -20,8 +21,28 @@ class MinIOClient:
             secret_key=settings.MINIO_SECRET_KEY,
             secure=settings.MINIO_SECURE,
         )
+        self.presign_client = self._create_presign_client()
         self.bucket_name = settings.MINIO_BUCKET
         self._ensure_bucket()
+
+    def _create_presign_client(self) -> Minio:
+        """使用公网 endpoint 生成浏览器可访问的预签名 URL。"""
+        public_endpoint = settings.MINIO_PUBLIC_ENDPOINT.strip()
+        if not public_endpoint:
+            return self.client
+
+        public_secure = settings.MINIO_SECURE
+        if "://" in public_endpoint:
+            parsed = urlparse(public_endpoint)
+            public_endpoint = parsed.netloc
+            public_secure = parsed.scheme == "https"
+
+        return Minio(
+            public_endpoint,
+            access_key=settings.MINIO_ACCESS_KEY,
+            secret_key=settings.MINIO_SECRET_KEY,
+            secure=public_secure,
+        )
 
     def _ensure_bucket(self):
         """确保存储桶存在，不存在则创建"""
@@ -87,7 +108,7 @@ class MinIOClient:
         """获取对象的预签名访问 URL（有效期 7 天）"""
         from datetime import timedelta
 
-        url = self.client.presigned_get_object(
+        url = self.presign_client.presigned_get_object(
             bucket_name=self.bucket_name,
             object_name=object_name,
             expires=timedelta(days=7),
